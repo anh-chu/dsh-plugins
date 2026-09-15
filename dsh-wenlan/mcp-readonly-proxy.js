@@ -99,6 +99,14 @@ serverOutput.on('line', (line) => {
   const method = message?.id !== undefined ? pending.get(idKey(message.id)) : undefined;
   if (method === 'tools/list' && Array.isArray(message.result?.tools)) {
     message.result.tools = message.result.tools.filter((tool) => isAllowed(tool?.name));
+    // Some providers (e.g. Copilot's Gemini shim) reject function tools whose
+    // object schema has no `properties` key with HTTP 400. Normalise it here.
+    for (const tool of message.result.tools) {
+      const schema = tool?.inputSchema;
+      if (schema && typeof schema === 'object' && schema.type === 'object' && schema.properties === undefined) {
+        schema.properties = {};
+      }
+    }
   }
   if (message?.id !== undefined) pending.delete(idKey(message.id));
   send(process.stdout, message);
