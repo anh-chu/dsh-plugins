@@ -1,0 +1,22 @@
+{
+  "name": "dsh-wenlan",
+  "version": "0.1.0-local.1",
+  "private": true,
+  "description": "Local Wenlan MCP integration bundle for DeepSeek Harness.",
+  "type": "module",
+  "main": "lib/index.js",
+  "engines": {
+    "dsh": "0.1.5-rc.1"
+  },
+  "files": ["cordis.patch.yml", "README.md", "lib", "mcp-readonly-proxy.js", "package.json"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-mcp-client": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.5-rc.1"
+  }
+}

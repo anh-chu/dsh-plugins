@@ -1,0 +1,16 @@
+# Read/explicit-capture MVP: expose Wenlan's local MCP tools without
+# changing DSH's existing dsh-mneme automatic memory behavior.
+- insert:
+    - id: dsh-wenlan-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: wenlan
+        transport: stdio
+        command: /home/sil/.local/share/fnm/aliases/default/bin/node
+        args:
+          - /home/sil/dsh-wenlan/mcp-readonly-proxy.js
+        env:
+          WENLAN_DEFAULT_SPACE: work
+        failOnStartupError: false
+    - id: dsh-wenlan-routing
+      name: dsh-wenlan

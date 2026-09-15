@@ -1,0 +1,8 @@
+# Mount the plugin and ensure Connection can register its authenticated RPC route.
+- id: connection
+  inject:
+    - webServer
+    - webRuntime
+- insert:
+    - id: dsh-wiki-viewer
+      name: dsh-wiki-viewer

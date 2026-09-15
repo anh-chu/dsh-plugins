@@ -1,0 +1,4 @@
+# Mount the session model badge plugin row.
+- insert:
+    - id: session-model-badge
+      name: 'dsh-session-model-badge'
