@@ -14,8 +14,8 @@ Also configures MCP server `wenlan` via `@deepseek-ai/dsh-mcp-client` (stdio `no
 ### dsh-session-model-badge (`./dsh-session-model-badge` v0.1.0)
 Shows the model(s) used in the current session (main or subagent) in the conversation header.
 
-### dsh-wiki-viewer (`./dsh-wiki-viewer` v0.0.1)
-Minimal DSH Web Sidebar wiki viewer integration.
+### dsh-wiki-viewer (`./dsh-wiki-viewer` v0.1.0)
+Minimal DSH Web Sidebar wiki viewer integration. Its Settings → Plugins card shows the installed vs latest wiki-viewer release with an update button.
 
 ## Install
 

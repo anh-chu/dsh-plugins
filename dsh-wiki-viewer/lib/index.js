@@ -1,14 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { request } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { request } from "node:http";
+import z from "@deepseek-ai/schemastery";
 
 const name = "dsh-wiki-viewer";
 const inject = ["webServer", "connection"];
 const CHANNEL = "/dsh-wiki-viewer";
 const WIKI_ROUTE = "/__dsh/wiki";
-const WIKI_VERSION = "2.18.3";
+// Last-known-good release. Used only when the npm registry cannot be reached;
+// otherwise the plugin installs and offers the latest published release.
+const WIKI_VERSION = "2.19.0";
+const WIKI_PACK = "wiki-viewer";
+const NPM_LATEST_URL = "https://registry.npmjs.org/wiki-viewer/latest";
+const SETTINGS_NS = "dsh-wiki-viewer";
+// Action-only settings card (the update button lives in the client half);
+// an empty schema still serves the namespace so the Plugins tab dispatches it.
+const SettingsSchema = z.object({});
 const DEFAULT_ROOT = join(process.env.DSH_WIKI_VIEWER_ROOT ?? join(process.env.DSH_HOME ?? homedir(), "wiki-viewer"));
 
 function failure(code, message) {
@@ -106,14 +115,51 @@ function proxyRequest(req, res, port, root, file, path, grant) {
   req.pipe(upstream);
 }
 
-function installed(root) {
-  const bin = join(root, "bin", "wiki-viewer-lite.js");
-  const server = join(root, ".next", "standalone", "server.js");
-  if (!existsSync(bin) || !existsSync(server)) return false;
+function readInstalledVersion(root) {
   try {
-    return JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version === WIKI_VERSION;
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    return typeof pkg.version === "string" && pkg.version !== "" ? pkg.version : null;
   } catch {
-    return false;
+    return null;
+  }
+}
+
+function installComplete(root) {
+  return existsSync(join(root, "bin", "wiki-viewer-lite.js")) && existsSync(join(root, ".next", "standalone", "server.js"));
+}
+
+// Installed release version, or null when no usable install exists.
+// Any complete install counts: the plugin no longer downgrades a newer
+// release back to the pinned fallback version.
+function installedVersion(root) {
+  if (!installComplete(root)) return null;
+  return readInstalledVersion(root);
+}
+
+function compareVersions(a, b) {
+  const na = String(a).split(".").map((part) => parseInt(part, 10) || 0);
+  const nb = String(b).split(".").map((part) => parseInt(part, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if ((na[i] ?? 0) > (nb[i] ?? 0)) return 1;
+    if ((na[i] ?? 0) < (nb[i] ?? 0)) return -1;
+  }
+  return 0;
+}
+
+async function fetchLatestVersion() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(NPM_LATEST_URL, {
+      headers: { accept: "application/json", "user-agent": "deepseek-harness/dsh-wiki-viewer" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`registry responded with ${response.status}`);
+    const data = await response.json();
+    if (typeof data?.version !== "string" || data.version === "") throw new Error("registry response has no version");
+    return data.version;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -130,7 +176,7 @@ async function runManaged(ctx, argv, cwd) {
   if (outcome.exitCode !== 0) throw new Error(`${argv[0]} exited with ${outcome.exitCode ?? outcome.signal ?? "failure"}`);
 }
 
-async function installViewer(ctx, root) {
+async function installViewer(ctx, root, version) {
   mkdirSync(join(root, ".."), { recursive: true });
   const staging = `${root}.new-${process.pid}`;
   const backup = `${root}.old`;
@@ -140,11 +186,13 @@ async function installViewer(ctx, root) {
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging, { recursive: true });
   try {
-    await runManaged(ctx, ["npm", "pack", `wiki-viewer@${WIKI_VERSION}`, "--pack-destination", pack], pack);
+    await runManaged(ctx, ["npm", "pack", `${WIKI_PACK}@${version}`, "--pack-destination", pack], pack);
     const tgz = readdirSync(pack).find((entry) => entry.endsWith(".tgz"));
     if (!tgz) throw new Error("npm pack produced no wiki-viewer archive");
     await runManaged(ctx, ["tar", "-xzf", join(pack, tgz), "-C", staging, "--strip-components=1"], staging);
-    if (!installed(staging)) throw new Error(`wiki-viewer ${WIKI_VERSION} is missing its lite build`);
+    if (!installComplete(staging) || readInstalledVersion(staging) !== version) {
+      throw new Error(`wiki-viewer ${version} is missing its lite build`);
+    }
     rmSync(backup, { recursive: true, force: true });
     if (existsSync(root)) renameSync(root, backup);
     renameSync(staging, root);
@@ -161,9 +209,15 @@ async function installViewer(ctx, root) {
 async function ensureViewer(ctx) {
   const override = process.env.DSH_WIKI_VIEWER_ROOT;
   const root = override ?? DEFAULT_ROOT;
-  if (installed(root)) return root;
+  if (installedVersion(root)) return root;
   if (override) throw new Error(`wiki viewer not found at ${root}`);
-  await installViewer(ctx, root);
+  let target = WIKI_VERSION;
+  try {
+    target = await fetchLatestVersion();
+  } catch {
+    // Offline: fall back to the last-known-good release.
+  }
+  await installViewer(ctx, root, target);
   return root;
 }
 
@@ -207,6 +261,14 @@ async function startViewer(ctx) {
 function apply(ctx) {
   const grants = new Map();
   let viewerPromise;
+  let updatePromise;
+
+  // Serve the settings namespace so Settings → Plugins → Plugin
+  // configuration dispatches this plugin's card (which hosts the update
+  // button). Inert when no settings provider is composed.
+  ctx.inject(["settings"], (sctx) => {
+    sctx.settings.register(SETTINGS_NS, SettingsSchema);
+  });
 
   const prepare = async (payload) => {
     const sessionId = payload?.sessionId;
@@ -241,12 +303,69 @@ function apply(ctx) {
     return { ok: true, value: { url: `${WIKI_ROUTE}?${params}` } };
   };
 
+  const describeVersion = async () => {
+    const override = process.env.DSH_WIKI_VIEWER_ROOT;
+    const root = override ?? DEFAULT_ROOT;
+    const installed = installedVersion(root);
+    let latest = null;
+    let latestError = "";
+    try {
+      latest = await fetchLatestVersion();
+    } catch (error) {
+      latestError = error instanceof Error ? error.message : "version check failed";
+    }
+    return {
+      ok: true,
+      value: {
+        installed,
+        latest,
+        latestError,
+        fallback: WIKI_VERSION,
+        root,
+        managed: !override,
+        updateAvailable: latest !== null && installed !== null && compareVersions(latest, installed) > 0,
+      },
+    };
+  };
+
+  const updateViewer = () => {
+    if (updatePromise) return updatePromise;
+    updatePromise = (async () => {
+      try {
+        if (process.env.DSH_WIKI_VIEWER_ROOT) {
+          throw new Error("a custom DSH_WIKI_VIEWER_ROOT is set; update that checkout manually");
+        }
+        const root = DEFAULT_ROOT;
+        const latest = await fetchLatestVersion();
+        const current = installedVersion(root);
+        if (current === latest) return { ok: true, value: { updated: false, version: current } };
+        await installViewer(ctx, root, latest);
+        if (viewerPromise) {
+          try {
+            const viewer = await viewerPromise;
+            viewer.handle?.terminate();
+            await viewer.handle?.waitForExit?.().catch(() => {});
+          } catch {}
+          viewerPromise = undefined;
+        }
+        return { ok: true, value: { updated: true, previous: current, version: latest } };
+      } catch (error) {
+        return failure("wiki/update-failed", error instanceof Error ? error.message : "wiki viewer update failed");
+      } finally {
+        updatePromise = undefined;
+      }
+    })();
+    return updatePromise;
+  };
+
   const rpcHandle = ctx.connection?.rpc?.handle;
   if (typeof rpcHandle === "function") {
     ctx.effect(() => rpcHandle.call(ctx.connection.rpc, CHANNEL, async (endpoint, payload) => {
-      if (endpoint !== "prepare") return failure("wiki/unknown-endpoint", "unknown endpoint");
       try {
-        return await prepare(payload);
+        if (endpoint === "prepare") return await prepare(payload);
+        if (endpoint === "version") return await describeVersion();
+        if (endpoint === "update") return await updateViewer();
+        return failure("wiki/unknown-endpoint", "unknown endpoint");
       } catch (error) {
         return failure("wiki/unavailable", error instanceof Error ? error.message : "wiki viewer unavailable");
       }
