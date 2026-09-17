@@ -1,0 +1,27 @@
+# dsh-claude-billing-header layer.
+#
+# Adds one host plugin row that injects the Claude Code billing-routing
+# header into Anthropic OAuth requests. Anthropic routes subscription
+# (OAuth) requests to the plan quota only when the request presents as
+# Claude Code; without this header the same token bills to metered
+# "extra usage" while the CLI itself keeps working.
+#
+# Configuration (row `config`, all optional):
+#   entrypoint: string   cc_entrypoint value. Default "cli" to match the
+#                        `x-app: cli` / `(external, cli)` fingerprint
+#                        dsh-plugin-subscriptions already sends.
+#                        Env PI_CLAUDE_CODE_ENTRYPOINT / CLAUDE_CODE_ENTRYPOINT
+#                        wins when set.
+#   version: string       cc_version value. Default: live `claude --version`
+#                        detection, else 2.1.263 (same fallback the
+#                        subscriptions plugin uses for its user-agent).
+#                        Env PI_CLAUDE_CODE_VERSION / CLAUDE_CODE_VERSION
+#                        wins when set.
+#   debug: true|false    log every injection via ctx.logger.
+#   debugFile: path      optional: append one JSON line per injection.
+- insert:
+    - id: claude-billing-header
+      name: dsh-claude-billing-header
+      config:
+        entrypoint: cli
+        debug: false

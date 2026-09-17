@@ -17,6 +17,9 @@ Shows the model(s) used in the current session (main or subagent) in the convers
 ### dsh-wiki-viewer (`./dsh-wiki-viewer` v0.1.0)
 Minimal DSH Web Sidebar wiki viewer integration. Its Settings → Plugins card shows the installed vs latest wiki-viewer release with an update button.
 
+### dsh-claude-billing-header (`./dsh-claude-billing-header` v0.1.0)
+Host fetch patch replicating the routing-critical part of `pi-claude-oauth-adapter`: prepends `x-anthropic-billing-header` as `system[0]` on Anthropic OAuth messages calls so subscription usage bills to the plan quota instead of metered extra usage. No-op for API-key calls and when the header is already present.
+
 ## Install
 
 In `~/.dsh/profiles/web/package.json`:

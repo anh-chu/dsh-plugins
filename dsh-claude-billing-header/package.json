@@ -1,0 +1,38 @@
+{
+  "name": "dsh-claude-billing-header",
+  "version": "0.1.4",
+  "description": "DeepSeek Harness plugin: injects the Claude Code billing-routing header (x-anthropic-billing-header) into Anthropic OAuth requests so subscription usage bills to the plan quota instead of metered extra usage.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node tests/test.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "cordis",
+    "anthropic",
+    "claude",
+    "oauth",
+    "billing-header",
+    "extra-usage"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
