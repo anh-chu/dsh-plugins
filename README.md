@@ -20,6 +20,9 @@ Minimal DSH Web Sidebar wiki viewer integration. Its Settings → Plugins card s
 ### dsh-claude-billing-header (`./dsh-claude-billing-header` v0.1.0)
 Host fetch patch replicating the routing-critical part of `pi-claude-oauth-adapter`: prepends `x-anthropic-billing-header` as `system[0]` on Anthropic OAuth messages calls so subscription usage bills to the plan quota instead of metered extra usage. No-op for API-key calls and when the header is already present.
 
+### dsh-mobile-harden (`./dsh-mobile-harden` v0.1.0)
+Mobile hardening for the DSH web UI (touch layouts only, desktop untouched): Enter inserts a newline in the composer instead of sending; viewport pinned to `maximum-scale=1, user-scalable=no` plus `touch-action: manipulation` kills tap/focus/double-tap zoom; text selection and long-press callout blocked on app chrome but kept in messages and fields; composer autofocus on session switch is dropped so the keyboard stays away; tapping a session closes the narrow overlay sidebar. Requires `inject: ["webServer"]` on the Host half — without it the row can apply before the service exists and the viewport tap silently never registers.
+
 ## Install
 
 In `~/.dsh/profiles/web/package.json`:

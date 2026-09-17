@@ -1,0 +1,4 @@
+# Mount the mobile hardening plugin row.
+- insert:
+    - id: dsh-mobile-harden
+      name: 'dsh-mobile-harden'
