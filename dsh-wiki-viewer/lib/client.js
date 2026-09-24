@@ -10,6 +10,18 @@ window.__ModuleLoader__.load({
     const FILE_KIND = "dsh-wiki-file";
     const CHANNEL = "/dsh-wiki-viewer";
 
+    const FILE_PREFIX = "dsh-resource://file/session/";
+
+    // The Session-relative path inside a file address, or undefined when the
+    // address is not this Session's file resource. Mirrors the host's parser;
+    // only its presence matters here (the host re-validates and resolves it).
+    function filePathIn(address) {
+      if (typeof address !== "string" || !address.startsWith(FILE_PREFIX)) return undefined;
+      const rest = address.slice(FILE_PREFIX.length);
+      const slash = rest.indexOf("/");
+      return slash < 1 ? undefined : rest.slice(slash + 1);
+    }
+
     function rpcOf(ctx) {
       const rpc = ctx.get("connection")?.rpc;
       return typeof rpc?.call === "function" ? rpc.call.bind(rpc) : undefined;
@@ -161,11 +173,12 @@ window.__ModuleLoader__.load({
 
     function FileAction(ctx) {
       return function Action({ tab, dismiss }) {
-        if (typeof tab?.contentId !== "string" || !tab.contentId.startsWith("dsh-resource://file/session/")) return null;
+        if (filePathIn(tab?.contentId) === undefined) return null;
         return React.createElement("button", {
           type: "button",
           onClick: () => {
-            ctx.get("sidebarRight")?.openResource(tab.contentId, { kind: FILE_KIND });
+            // openResource takes the address alone; the type claiming it wins.
+            ctx.get("sidebarRight")?.openResource(tab.contentId);
             dismiss();
           }
         }, "Open in Wiki Viewer");
@@ -188,7 +201,17 @@ window.__ModuleLoader__.load({
           title: () => "Wiki Viewer",
           guide: [{ order: 20, title: () => "Wiki Viewer", description: () => "Browse this Session workspace" }]
         }));
-        own(tabs.register({ id: FILE_ID, kind: FILE_KIND, title: () => "Wiki Viewer" }));
+        // A file-backed tab must CLAIM file addresses: routing sends an address to
+        // the types whose patterns match it, and a type with no patterns
+        // recognizes no address at all, so without this the sidebar can never
+        // route a file (or "Open in Wiki Viewer") into this tab.
+        own(tabs.register({
+          id: FILE_ID,
+          kind: FILE_KIND,
+          patterns: ["dsh-resource://file/**"],
+          canOpen: (address) => filePathIn(address) !== undefined,
+          title: () => "Wiki Viewer"
+        }));
         own(slots.inject("sidebar.right.pane.tab", () => slots.register({ name: "sidebar.right.pane.tab", key: BROWSER_ID }, Body)));
         own(slots.inject("sidebar.right.pane.tab", () => slots.register({ name: "sidebar.right.pane.tab", key: FILE_ID }, Body)));
         own(slots.inject("sidebar.right.pane.tab.title", () => slots.register({ name: "sidebar.right.pane.tab.title", key: BROWSER_ID }, ViewerTitle)));

@@ -9,9 +9,9 @@ const name = "dsh-wiki-viewer";
 const inject = ["webServer", "connection"];
 const CHANNEL = "/dsh-wiki-viewer";
 const WIKI_ROUTE = "/__dsh/wiki";
-// Last-known-good release. Used only when the npm registry cannot be reached;
-// otherwise the plugin installs and offers the latest published release.
-const WIKI_VERSION = "2.19.0";
+// The plugin always targets the latest published release; there is deliberately
+// no pinned version. A pinned fallback silently diverges from what is actually
+// installed, which is how the viewer previously ended up unable to start.
 const WIKI_PACK = "wiki-viewer";
 const NPM_LATEST_URL = "https://registry.npmjs.org/wiki-viewer/latest";
 const SETTINGS_NS = "dsh-wiki-viewer";
@@ -129,8 +129,7 @@ function installComplete(root) {
 }
 
 // Installed release version, or null when no usable install exists.
-// Any complete install counts: the plugin no longer downgrades a newer
-// release back to the pinned fallback version.
+// Any complete install counts; there is no pinned version to downgrade to.
 function installedVersion(root) {
   if (!installComplete(root)) return null;
   return readInstalledVersion(root);
@@ -206,19 +205,18 @@ async function installViewer(ctx, root, version) {
   }
 }
 
-async function ensureViewer(ctx) {
+// Resolve the viewer checkout, but never install one implicitly. Installation
+// is a deliberate act (the Settings card's Update/Install button): opening a
+// tab must not silently download tens of megabytes.
+async function ensureViewer(_ctx) {
   const override = process.env.DSH_WIKI_VIEWER_ROOT;
   const root = override ?? DEFAULT_ROOT;
   if (installedVersion(root)) return root;
-  if (override) throw new Error(`wiki viewer not found at ${root}`);
-  let target = WIKI_VERSION;
-  try {
-    target = await fetchLatestVersion();
-  } catch {
-    // Offline: fall back to the last-known-good release.
-  }
-  await installViewer(ctx, root, target);
-  return root;
+  throw new Error(
+    override
+      ? `wiki viewer not found at ${root}`
+      : `wiki viewer is not installed at ${root}; use Settings → Plugins → Wiki Viewer to install it`,
+  );
 }
 
 async function startViewer(ctx) {
@@ -320,10 +318,9 @@ function apply(ctx) {
         installed,
         latest,
         latestError,
-        fallback: WIKI_VERSION,
         root,
         managed: !override,
-        updateAvailable: latest !== null && installed !== null && compareVersions(latest, installed) > 0,
+        updateAvailable: latest !== null && (installed === null || compareVersions(latest, installed) > 0),
       },
     };
   };
