@@ -259,6 +259,32 @@ async function startViewer(ctx) {
   }
 }
 
+// A resolved viewerPromise says the viewer started, not that it is still
+// alive (it can be killed or crash afterwards, leaving the proxy with a dead
+// port and every open failing until restart). Any HTTP response counts as
+// alive; only connection failure or timeout means dead.
+function viewerAlive(port) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 2000);
+    const probe = request({ hostname: "127.0.0.1", port, path: "/api/wiki", method: "GET" }, (res) => {
+      clearTimeout(timer);
+      res.resume();
+      resolve(true);
+    });
+    probe.on("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    probe.on("timeout", () => {
+      probe.destroy();
+      clearTimeout(timer);
+      resolve(false);
+    });
+    probe.setTimeout(2000);
+    probe.end();
+  });
+}
+
 function apply(ctx) {
   const grants = new Map();
   let viewerPromise;
@@ -289,12 +315,22 @@ function apply(ctx) {
     const info = await fs.lstat(file === "" ? cwd : file, { cwd });
     if (file !== "" && info?.type !== "file") return failure("wiki/not-file", "target is not a regular file");
     if (!viewerPromise) viewerPromise = startViewer(ctx);
-    let viewer;
-    try {
-      viewer = await viewerPromise;
-    } catch (error) {
-      viewerPromise = undefined;
-      throw error;
+    const settleViewer = async () => {
+      try {
+        return await viewerPromise;
+      } catch (error) {
+        viewerPromise = undefined;
+        throw error;
+      }
+    };
+    let viewer = await settleViewer();
+    if (!(await viewerAlive(viewer.port))) {
+      try {
+        viewer.handle?.terminate();
+        await viewer.handle?.waitForExit?.().catch(() => {});
+      } catch {}
+      viewerPromise = startViewer(ctx);
+      viewer = await settleViewer();
     }
     const grant = randomUUID();
     const rootPath = fs.processPath(root);
