@@ -38,12 +38,79 @@ window.__ModuleLoader__.load({
       "wiki viewer unavailable",
     ];
 
+    // The grant cookie is not a reliable transport (browsers can refuse to
+    // store it while the page itself loads fine via ?grant=). The frame is
+    // same-origin, so the panel staples the grant it already holds onto the
+    // frame's own fetch calls instead of depending on the cookie. The grant
+    // travels in the query string exactly like the initial page load, and the
+    // proxy strips it before proxying upstream, so the viewer never sees it.
+    function wrapFrameFetch(frame, grant, route) {
+      if (!grant || !route) return;
+      let win;
+      try {
+        win = frame.contentWindow;
+        if (!win || typeof win.fetch !== "function") return;
+        if (win.fetch.__dshWikiGrant === grant) return;
+      } catch {
+        return;
+      }
+      const innerFetch = win.fetch.bind(win);
+      const wrapped = (input, init) => {
+        try {
+          const url = new URL(
+            typeof input === "string" || input instanceof URL ? input : input.url,
+            win.location.href,
+          );
+          if (url.origin === win.location.origin &&
+            (url.pathname === route || url.pathname.startsWith(`${route}/`)) &&
+            !url.searchParams.has("grant")) {
+            url.searchParams.set("grant", grant);
+            if (typeof input === "string" || input instanceof URL) input = url.toString();
+            else if (typeof win.Request === "function") input = new win.Request(url.toString(), input);
+          }
+        } catch {
+          // Leave the request untouched when it cannot be parsed.
+        }
+        return innerFetch(input, init);
+      };
+      wrapped.__dshWikiGrant = grant;
+      try {
+        win.fetch = wrapped;
+      } catch {
+        // Cross-origin or frozen: fall back to cookie transport.
+      }
+    }
+
     function ViewerBody(ctx) {
       return function Body({ useTabInfo, sessionId }) {
         const { tab } = useTabInfo();
         const [attempt, setAttempt] = React.useState(0);
         const [state, setState] = React.useState({ loading: true, src: "", error: "" });
         const frameRef = React.useRef(null);
+        // Latest grant/route for the fetch wrapper. Refreshed every render so
+        // a Retry (new grant) takes effect without remounting the frame.
+        const grantRef = React.useRef({ grant: "", route: "" });
+        try {
+          const srcUrl = new URL(state.src, "http://dsh.internal");
+          grantRef.current = {
+            grant: srcUrl.searchParams.get("grant") ?? "",
+            route: srcUrl.pathname,
+          };
+        } catch {
+          grantRef.current = { grant: "", route: "" };
+        }
+        // Re-patch the frame's fetch on a tick: viewer boot fetches can fire
+        // before the frame's load event, and in-frame navigations swap the
+        // window the patch lives on. Each tick is a no-op when already patched.
+        React.useEffect(() => {
+          const applyWrap = () => {
+            const frame = frameRef.current;
+            if (frame) wrapFrameFetch(frame, grantRef.current.grant, grantRef.current.route);
+          };
+          applyWrap();
+          const timer = setInterval(applyWrap, 100);
+          return () => clearInterval(timer);
+        }, []);
         React.useEffect(() => {
           const call = rpcOf(ctx);
           if (!call) {
@@ -89,6 +156,8 @@ window.__ModuleLoader__.load({
           style: { width: "100%", height: "100%", border: "0" },
           referrerPolicy: "no-referrer",
           onLoad: () => {
+            const frame = frameRef.current;
+            if (frame) wrapFrameFetch(frame, grantRef.current.grant, grantRef.current.route);
             checkFrame();
             setTimeout(checkFrame, 2000);
           }
