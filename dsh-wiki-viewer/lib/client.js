@@ -79,25 +79,64 @@ window.__ModuleLoader__.load({
       } catch {
         // Cross-origin or frozen: fall back to cookie transport.
       }
+      // Same treatment for window.open ("Open in new tab"): the new tab loads
+      // through the proxy, so it needs the grant in its URL too.
+      try {
+        if (typeof win.open === "function" && win.open.__dshWikiGrant !== grant) {
+          const innerOpen = win.open.bind(win);
+          const wrappedOpen = (url, target, features) => {
+            try {
+              const parsed = new URL(String(url), win.location.href);
+              if (parsed.origin === win.location.origin &&
+                (parsed.pathname === route || parsed.pathname.startsWith(`${route}/`)) &&
+                !parsed.searchParams.has("grant")) {
+                parsed.searchParams.set("grant", grant);
+                url = parsed.toString();
+              }
+            } catch {
+              // Leave the URL untouched when it cannot be parsed.
+            }
+            return innerOpen(url, target, features);
+          };
+          wrappedOpen.__dshWikiGrant = grant;
+          win.open = wrappedOpen;
+        }
+      } catch {
+        // Cross-origin or frozen: new tabs keep cookie transport.
+      }
     }
 
     // <img> tags bypass fetch, so the fetch wrapper cannot cover them (this
-    // is why images render as broken while API-driven content works). Rewrite
-    // their src to carry the grant; setting src reloads just that image.
+    // is why images render as broken while API-driven content works). The same
+    // holds for <video>/<audio> and persistent <a> links. Rewrite their URLs
+    // to carry the grant; setting the attribute reloads just that element.
     // Scripts and stylesheets are never touched: re-setting those would
     // re-execute or re-apply them.
-    function grantImageSrc(img, grant, route, origin) {
+    const GRANT_URL_SELECTOR = "img[src],video[src],audio[src],a[href]";
+    function grantAttrSrc(el, attr, grant, route, origin) {
       try {
-        const current = img.getAttribute("src") ?? "";
-        if (current === "") return;
+        const current = el.getAttribute(attr) ?? "";
+        if (current === "" || current.startsWith("#") || current.startsWith("blob:") || current.startsWith("data:")) return;
         const url = new URL(current, origin);
         if (url.origin !== origin) return;
         if (url.pathname !== route && !url.pathname.startsWith(`${route}/`)) return;
         if (url.searchParams.has("grant")) return;
         url.searchParams.set("grant", grant);
-        img.setAttribute("src", url.toString());
+        el.setAttribute(attr, url.toString());
       } catch {
-        // Leave the element untouched when its src cannot be parsed.
+        // Leave the element untouched when its URL cannot be parsed.
+      }
+    }
+
+    function patchMediaElement(el, grant, route, origin) {
+      if (!el || el.nodeType !== 1) return;
+      if (el.tagName === "IMG" || el.tagName === "VIDEO" || el.tagName === "AUDIO") {
+        grantAttrSrc(el, "src", grant, route, origin);
+      } else if (el.tagName === "A") {
+        grantAttrSrc(el, "href", grant, route, origin);
+      } else if (typeof el.querySelectorAll === "function") {
+        const found = el.querySelectorAll(GRANT_URL_SELECTOR);
+        for (const sub of found) patchMediaElement(sub, grant, route, origin);
       }
     }
 
@@ -112,8 +151,8 @@ window.__ModuleLoader__.load({
       } catch {
         return;
       }
-      const imgs = doc.querySelectorAll("img[src]");
-      for (const img of imgs) grantImageSrc(img, grant, route, origin);
+      const found = doc.querySelectorAll(GRANT_URL_SELECTOR);
+      for (const el of found) patchMediaElement(el, grant, route, origin);
     }
 
     function ViewerBody(ctx) {
@@ -200,12 +239,7 @@ window.__ModuleLoader__.load({
               };
               for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
-                  if (!node || node.nodeType !== 1) continue;
-                  if (node.tagName === "IMG") grantImageSrc(node, live.grant, live.route, originOf());
-                  else if (typeof node.querySelectorAll === "function") {
-                    const imgs = node.querySelectorAll("img[src]");
-                    for (const img of imgs) grantImageSrc(img, live.grant, live.route, originOf());
-                  }
+                  patchMediaElement(node, live.grant, live.route, originOf());
                 }
               }
             });
