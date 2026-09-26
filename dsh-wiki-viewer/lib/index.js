@@ -176,6 +176,9 @@ async function runManaged(ctx, argv, cwd) {
 }
 
 async function installViewer(ctx, root, version) {
+  if (existsSync(join(root, ".git"))) {
+    throw new Error(`refusing to install over the source checkout at ${root}; update it via git instead`);
+  }
   mkdirSync(join(root, ".."), { recursive: true });
   const staging = `${root}.new-${process.pid}`;
   const backup = `${root}.old`;
