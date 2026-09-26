@@ -27,11 +27,23 @@ window.__ModuleLoader__.load({
       return typeof rpc?.call === "function" ? rpc.call.bind(rpc) : undefined;
     }
 
+    // Plain-text bodies the proxy host half answers with when the frame's
+    // grant is missing, expired, or the viewer is down. The frame is
+    // same-origin, so the panel can read its own frame and turn these into a
+    // Retry (fresh prepare) instead of a dead page.
+    const FRAME_ERRORS = [
+      "wiki grant required",
+      "wiki grant is no longer valid",
+      "wiki workspace unavailable",
+      "wiki viewer unavailable",
+    ];
+
     function ViewerBody(ctx) {
       return function Body({ useTabInfo, sessionId }) {
         const { tab } = useTabInfo();
         const [attempt, setAttempt] = React.useState(0);
         const [state, setState] = React.useState({ loading: true, src: "", error: "" });
+        const frameRef = React.useRef(null);
         React.useEffect(() => {
           const call = rpcOf(ctx);
           if (!call) {
@@ -59,11 +71,27 @@ window.__ModuleLoader__.load({
           React.createElement("p", null, state.error),
           React.createElement("button", { type: "button", onClick: () => setAttempt((value) => value + 1) }, "Retry")
         );
+        const checkFrame = () => {
+          let text = "";
+          try {
+            text = String(frameRef.current?.contentDocument?.body?.innerText ?? "").trim();
+          } catch {
+            return;
+          }
+          if (text !== "" && FRAME_ERRORS.some((marker) => text.startsWith(marker))) {
+            setState((prev) => prev.error !== "" ? prev : { loading: false, src: "", error: `Wiki session expired (${text}). Retry to reconnect.` });
+          }
+        };
         return React.createElement("iframe", {
           title: tab.title,
           src: state.src,
+          ref: frameRef,
           style: { width: "100%", height: "100%", border: "0" },
-          referrerPolicy: "no-referrer"
+          referrerPolicy: "no-referrer",
+          onLoad: () => {
+            checkFrame();
+            setTimeout(checkFrame, 2000);
+          }
         });
       };
     }
