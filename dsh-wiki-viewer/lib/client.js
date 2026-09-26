@@ -155,14 +155,102 @@ window.__ModuleLoader__.load({
       for (const el of found) patchMediaElement(el, grant, route, origin);
     }
 
+    // The Download button builds a detached <a download> and clicks it
+    // synchronously: no observer can ever see it in time. Patch click() in the
+    // frame realm instead, so route URLs gain the grant just before dispatch.
+    function patchAnchorClick(win, grant, route) {
+      if (!grant || !route) return;
+      try {
+        const Proto = win.HTMLAnchorElement && win.HTMLAnchorElement.prototype;
+        if (!Proto || typeof Proto.click !== "function") return;
+        if (Proto.click.__dshWikiGrant === grant) return;
+        const innerClick = Proto.click;
+        const wrappedClick = function () {
+          try {
+            const href = this.getAttribute && this.getAttribute("href");
+            if (typeof href === "string" && href !== "") {
+              const url = new URL(href, win.location.href);
+              if (url.origin === win.location.origin &&
+                (url.pathname === route || url.pathname.startsWith(`${route}/`)) &&
+                !url.searchParams.has("grant")) {
+                url.searchParams.set("grant", grant);
+                this.setAttribute("href", url.toString());
+              }
+            }
+          } catch {
+            // Click through unmodified when the href cannot be parsed.
+          }
+          return innerClick.call(this);
+        };
+        wrappedClick.__dshWikiGrant = grant;
+        Proto.click = wrappedClick;
+      } catch {
+        // Cross-origin or frozen: downloads keep cookie transport.
+      }
+    }
+
+    // Patch one frame and, depth-capped, its same-origin nested preview
+    // frames (HTML/website/node-app previews are separate documents with
+    // their own window, fetch, and media). Idempotent per grant.
+    function patchFrameTree(frame, grant, route, depth) {
+      if (!grant || !route || depth > 2) return;
+      wrapFrameFetch(frame, grant, route);
+      sweepFrameImages(frame, grant, route);
+      let win;
+      let doc;
+      try {
+        win = frame.contentWindow;
+        doc = frame.contentDocument;
+        if (!win || !doc) return;
+      } catch {
+        return;
+      }
+      patchAnchorClick(win, grant, route);
+      let nested = [];
+      try {
+        nested = Array.from(doc.querySelectorAll("iframe[src]"));
+      } catch {
+        return;
+      }
+      for (const ifr of nested) {
+        try {
+          const cur = ifr.getAttribute("src") ?? "";
+          const url = new URL(cur, win.location.href);
+          if (url.origin === win.location.origin &&
+            (url.pathname === route || url.pathname.startsWith(`${route}/`)) &&
+            !url.searchParams.has("grant")) {
+            url.searchParams.set("grant", grant);
+            ifr.setAttribute("src", url.toString());
+          }
+        } catch {
+          // Leave foreign or unparseable frames alone.
+        }
+        try {
+          if (ifr.__dshWikiGrantWatched === grant) continue;
+          ifr.__dshWikiGrantWatched = grant;
+          ifr.addEventListener("load", () => {
+            try {
+              patchFrameTree(
+                { contentWindow: ifr.contentWindow, contentDocument: ifr.contentDocument },
+                grant, route, depth + 1,
+              );
+            } catch {
+              // Torn down mid-load.
+            }
+          });
+        } catch {
+          // Element does not accept listeners; skip recursion for it.
+        }
+      }
+    }
+
     function ViewerBody(ctx) {
       return function Body({ useTabInfo, sessionId }) {
         const { tab } = useTabInfo();
         const [attempt, setAttempt] = React.useState(0);
         const [state, setState] = React.useState({ loading: true, src: "", error: "" });
         const frameRef = React.useRef(null);
-        const imageObserverRef = React.useRef(null);
-        // Latest grant/route for the fetch wrapper. Refreshed every render so
+        // Latest grant/route for the frame patches. Refreshed every render so
         // a Retry (new grant) takes effect without remounting the frame.
         const grantRef = React.useRef({ grant: "", route: "" });
         try {
@@ -174,13 +262,13 @@ window.__ModuleLoader__.load({
         } catch {
           grantRef.current = { grant: "", route: "" };
         }
-        // Re-patch the frame's fetch on a tick: viewer boot fetches can fire
+        // Re-patch the frame tree on a tick: viewer boot fetches can fire
         // before the frame's load event, and in-frame navigations swap the
-        // window the patch lives on. Each tick is a no-op when already patched.
+        // window the patches live on. Each tick is a no-op when already patched.
         React.useEffect(() => {
           const applyWrap = () => {
             const frame = frameRef.current;
-            if (frame) wrapFrameFetch(frame, grantRef.current.grant, grantRef.current.route);
+            if (frame) patchFrameTree(frame, grantRef.current.grant, grantRef.current.route, 0);
           };
           applyWrap();
           const timer = setInterval(applyWrap, 100);
@@ -213,50 +301,6 @@ window.__ModuleLoader__.load({
           React.createElement("p", null, state.error),
           React.createElement("button", { type: "button", onClick: () => setAttempt((value) => value + 1) }, "Retry")
         );
-        // Watch the frame for newly added images (client-side navigation
-        // renders them after load). Previous document's observer is dropped.
-        const watchFrameImages = () => {
-          const frame = frameRef.current;
-          const { grant, route } = grantRef.current;
-          if (!frame || !grant || !route) return;
-          sweepFrameImages(frame, grant, route);
-          try {
-            if (imageObserverRef.current) imageObserverRef.current.disconnect();
-            const doc = frame.contentDocument;
-            const WinObserver = frame.contentWindow.MutationObserver ?? window.MutationObserver;
-            if (!doc || !doc.documentElement || typeof WinObserver !== "function") return;
-            const observer = new WinObserver((mutations) => {
-              const live = grantRef.current;
-              // NOTE: instanceof Element is wrong here on purpose avoided: nodes
-              // belong to the frame's window, so outer-realm checks misfire.
-              // nodeType 1 + tagName duck-typing works across realms.
-              const originOf = () => {
-                try {
-                  return frame.contentWindow.location.origin;
-                } catch {
-                  return "";
-                }
-              };
-              for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                  patchMediaElement(node, live.grant, live.route, originOf());
-                }
-              }
-            });
-            observer.observe(doc.documentElement, { childList: true, subtree: true });
-            imageObserverRef.current = observer;
-          } catch {
-            // Cross-origin or torn down: images keep cookie transport.
-          }
-        };
-        // Drop the observer with the tab, never across tabs.
-        React.useEffect(() => () => {
-          try {
-            if (imageObserverRef.current) imageObserverRef.current.disconnect();
-          } catch {
-            // Already gone.
-          }
-        }, []);
         const checkFrame = () => {
           let text = "";
           try {
@@ -276,10 +320,7 @@ window.__ModuleLoader__.load({
           referrerPolicy: "no-referrer",
           onLoad: () => {
             const frame = frameRef.current;
-            if (frame) {
-              wrapFrameFetch(frame, grantRef.current.grant, grantRef.current.route);
-              watchFrameImages();
-            }
+            if (frame) patchFrameTree(frame, grantRef.current.grant, grantRef.current.route, 0);
             checkFrame();
             setTimeout(checkFrame, 2000);
           }
