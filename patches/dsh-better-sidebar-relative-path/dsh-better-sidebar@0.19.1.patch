@@ -1,0 +1,54 @@
+diff --git a/lib/index.js b/lib/index.js
+index 74c717132dba4087c5d7355e17f2aff58731c150..2e5d14aad195a2b20f21a3b276b4b91ad85ef7f9 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -367,14 +367,15 @@ function assertWithinWorkspace(workspace, target) {
+ * enforce containment.
+ *
+ * @param cwd - Session workspace directory.
+-* @param target - Client-supplied absolute path in the session's namespace.
++* @param target - Client-supplied absolute or workspace-relative path in the session's namespace.
+ * @param fence - Whether containment is enforced (the settings-page
+ * `workspaceFence` switch). Even when false the paths are still resolved
+ * through symlinks so callers always receive the canonical target.
+ * @returns The canonical absolute path used for the filesystem operation.
+ */
+ async function ensureWorkspacePath(cwd, target, fence = true) {
+-	const absolute = requireAbsolute(resolveSessionPath(cwd, target));
++	const namespaced = resolveSessionPath(cwd, target);
++	const absolute = requireAbsolute(isAbsolute(namespaced) ? namespaced : join(cwd, namespaced));
+ 	const [realCwd, realTarget] = await Promise.all([resolveRealPath(cwd, "workspace"), resolveRealPath(absolute, "target")]);
+ 	if (fence) assertWithinWorkspace(realCwd, realTarget);
+ 	return realTarget;
+diff --git a/src/path-security.ts b/src/path-security.ts
+index fb31027d039b48f565db1f5b98ee768ed7b199d6..640e6f5b4635ee9409b144faff48d0cdd816ee36 100644
+--- a/src/path-security.ts
++++ b/src/path-security.ts
+@@ -1,6 +1,6 @@
+ /** Filesystem path guards shared by sidebar APIs that access a session workspace. */
+ import { realpath } from 'node:fs/promises'
+-import { basename, dirname, join } from 'node:path'
++import { basename, dirname, isAbsolute, join } from 'node:path'
+ import { isWithin, requireAbsolute } from './fs-tree.ts'
+ import { resolveSessionPath } from './session-path.ts'
+ import { SidebarError } from './wire.ts'
+@@ -26,14 +26,17 @@ function assertWithinWorkspace(workspace: string, target: string): void {
+  * enforce containment.
+  *
+  * @param cwd - Session workspace directory.
+- * @param target - Client-supplied absolute path in the session's namespace.
++ * @param target - Client-supplied path in the session's namespace: absolute
++ * paths pass through, workspace-relative paths (as sent by e.g. the
++ * /sidebar/file media route alongside a separate cwd) resolve against cwd.
+  * @param fence - Whether containment is enforced (the settings-page
+  * `workspaceFence` switch). Even when false the paths are still resolved
+  * through symlinks so callers always receive the canonical target.
+  * @returns The canonical absolute path used for the filesystem operation.
+  */
+ export async function ensureWorkspacePath(cwd: string, target: string, fence = true): Promise<string> {
+-  const absolute = requireAbsolute(resolveSessionPath(cwd, target))
++  const namespaced = resolveSessionPath(cwd, target)
++  const absolute = requireAbsolute(isAbsolute(namespaced) ? namespaced : join(cwd, namespaced))
+   const [realCwd, realTarget] = await Promise.all([
+     resolveRealPath(cwd, 'workspace'),
+     resolveRealPath(absolute, 'target'),

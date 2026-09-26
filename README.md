@@ -48,6 +48,16 @@ In `~/.dsh/profiles/web/package.json`:
 
 Note: `dsh-wenlan/cordis.patch.yml` contains absolute local paths (`/home/sil/...`). Adjust `command` and `args` to your machine before use.
 
+## Patches (third-party fixes, pnpm `patchedDependencies` pattern)
+
+### `patches/dsh-better-sidebar-relative-path/`
+Fixes inline tool file preview 400s in `dsh-better-sidebar` 0.19.1 (still broken
+in 0.21.1): `/sidebar/file` rejected workspace-relative paths with
+`"..." is not an absolute path` even though `cwd` rode along in the query.
+`ensureWorkspacePath` now resolves relative targets against `cwd`; the
+realpath + `isWithin` fence still blocks escapes (403). See the folder README
+for install. Already applied to the live web profile.
+
 ## MCP servers
 
 These plugins configure 2 MCP clients (both via `@deepseek-ai/dsh-mcp-client`):
