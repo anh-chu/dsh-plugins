@@ -81,12 +81,48 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // <img> tags bypass fetch, so the fetch wrapper cannot cover them (this
+    // is why images render as broken while API-driven content works). Rewrite
+    // their src to carry the grant; setting src reloads just that image.
+    // Scripts and stylesheets are never touched: re-setting those would
+    // re-execute or re-apply them.
+    function grantImageSrc(img, grant, route, origin) {
+      try {
+        const current = img.getAttribute("src") ?? "";
+        if (current === "") return;
+        const url = new URL(current, origin);
+        if (url.origin !== origin) return;
+        if (url.pathname !== route && !url.pathname.startsWith(`${route}/`)) return;
+        if (url.searchParams.has("grant")) return;
+        url.searchParams.set("grant", grant);
+        img.setAttribute("src", url.toString());
+      } catch {
+        // Leave the element untouched when its src cannot be parsed.
+      }
+    }
+
+    function sweepFrameImages(frame, grant, route) {
+      if (!grant || !route) return;
+      let doc;
+      let origin;
+      try {
+        doc = frame.contentDocument;
+        origin = frame.contentWindow.location.origin;
+        if (!doc || !origin) return;
+      } catch {
+        return;
+      }
+      const imgs = doc.querySelectorAll("img[src]");
+      for (const img of imgs) grantImageSrc(img, grant, route, origin);
+    }
+
     function ViewerBody(ctx) {
       return function Body({ useTabInfo, sessionId }) {
         const { tab } = useTabInfo();
         const [attempt, setAttempt] = React.useState(0);
         const [state, setState] = React.useState({ loading: true, src: "", error: "" });
         const frameRef = React.useRef(null);
+        const imageObserverRef = React.useRef(null);
         // Latest grant/route for the fetch wrapper. Refreshed every render so
         // a Retry (new grant) takes effect without remounting the frame.
         const grantRef = React.useRef({ grant: "", route: "" });
@@ -138,6 +174,55 @@ window.__ModuleLoader__.load({
           React.createElement("p", null, state.error),
           React.createElement("button", { type: "button", onClick: () => setAttempt((value) => value + 1) }, "Retry")
         );
+        // Watch the frame for newly added images (client-side navigation
+        // renders them after load). Previous document's observer is dropped.
+        const watchFrameImages = () => {
+          const frame = frameRef.current;
+          const { grant, route } = grantRef.current;
+          if (!frame || !grant || !route) return;
+          sweepFrameImages(frame, grant, route);
+          try {
+            if (imageObserverRef.current) imageObserverRef.current.disconnect();
+            const doc = frame.contentDocument;
+            const WinObserver = frame.contentWindow.MutationObserver ?? window.MutationObserver;
+            if (!doc || !doc.documentElement || typeof WinObserver !== "function") return;
+            const observer = new WinObserver((mutations) => {
+              const live = grantRef.current;
+              // NOTE: instanceof Element is wrong here on purpose avoided: nodes
+              // belong to the frame's window, so outer-realm checks misfire.
+              // nodeType 1 + tagName duck-typing works across realms.
+              const originOf = () => {
+                try {
+                  return frame.contentWindow.location.origin;
+                } catch {
+                  return "";
+                }
+              };
+              for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                  if (!node || node.nodeType !== 1) continue;
+                  if (node.tagName === "IMG") grantImageSrc(node, live.grant, live.route, originOf());
+                  else if (typeof node.querySelectorAll === "function") {
+                    const imgs = node.querySelectorAll("img[src]");
+                    for (const img of imgs) grantImageSrc(img, live.grant, live.route, originOf());
+                  }
+                }
+              }
+            });
+            observer.observe(doc.documentElement, { childList: true, subtree: true });
+            imageObserverRef.current = observer;
+          } catch {
+            // Cross-origin or torn down: images keep cookie transport.
+          }
+        };
+        // Drop the observer with the tab, never across tabs.
+        React.useEffect(() => () => {
+          try {
+            if (imageObserverRef.current) imageObserverRef.current.disconnect();
+          } catch {
+            // Already gone.
+          }
+        }, []);
         const checkFrame = () => {
           let text = "";
           try {
@@ -157,7 +242,10 @@ window.__ModuleLoader__.load({
           referrerPolicy: "no-referrer",
           onLoad: () => {
             const frame = frameRef.current;
-            if (frame) wrapFrameFetch(frame, grantRef.current.grant, grantRef.current.route);
+            if (frame) {
+              wrapFrameFetch(frame, grantRef.current.grant, grantRef.current.route);
+              watchFrameImages();
+            }
             checkFrame();
             setTimeout(checkFrame, 2000);
           }
