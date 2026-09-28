@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ModelCatalog } from '../src/adapter/catalog.ts'
-import { isResponsesModel, PROVIDER_ID, reasoningEfforts, reasoningEffortWire, ZenAdapter } from '../src/adapter/zen-adapter.ts'
+import { isResponsesModel, modelCaps, PROVIDER_ID, reasoningEfforts, reasoningEffortWire, ZenAdapter } from '../src/adapter/zen-adapter.ts'
 
 /**
  * The exact method surface dsh-llm touches on a registered adapter. A missing
@@ -104,10 +104,10 @@ test('resolveModel advertises the thinking-level picker for reasoning models onl
 
 /** Scripted provider that records the streamSimple options it receives. */
 function capturingProvider() {
-  const captured: Array<{ onPayload?: (payload: unknown) => unknown }> = []
+  const captured: Array<{ model?: unknown; onPayload?: (payload: unknown) => unknown }> = []
   const provider = {
-    streamSimple(_model: unknown, _context: unknown, options: { onPayload?: (payload: unknown) => unknown }): AsyncIterable<{ type: string }> {
-      captured.push(options)
+    streamSimple(model: unknown, _context: unknown, options: { onPayload?: (payload: unknown) => unknown }): AsyncIterable<{ type: string }> {
+      captured.push({ model, ...options })
       return (async function* () {
         yield { type: 'start' }
         yield { type: 'text_delta', delta: 'hi' }
@@ -126,7 +126,7 @@ const gateBody = {
   tools: ['bash', 'read'].map((name) => ({ type: 'function', function: { name, description: 'd', parameters: {} } })),
 }
 
-async function runStream(catalogReasoning: boolean, effort?: string, model = 'big-pickle'): Promise<Array<{ onPayload?: (payload: unknown) => unknown }>> {
+async function runStream(catalogReasoning: boolean, effort?: string, model = 'big-pickle'): Promise<Array<{ model?: unknown; onPayload?: (payload: unknown) => unknown }>> {
   const { provider, captured } = capturingProvider()
   const adapter = new ZenAdapter(
     {
@@ -187,10 +187,36 @@ test('stream sends responses models the nested reasoning shape, never flat or no
   // no selection stays the plain gate shaper
   const defaultOptions = (await runStream(true, undefined, model))[0]!
   assert.equal(defaultOptions.onPayload?.({ ...gateBody }), undefined)
+
+  // the pi-ai model marks off unsupported so pi-ai's responses fallback
+  // (thinkingLevelMap.off ?? "none") stays silent on unselected effort
+  const piModel = defaultOptions.model as { thinkingLevelMap?: { off?: string | null } }
+  assert.equal(piModel.thinkingLevelMap?.off, null)
 })
 
-test('isResponsesModel routes muse-spark to responses, everything else to chat', () => {
-  for (const id of ['muse-spark-1.3-contributor-free', 'muse-spark-1.2-contributor-free', 'muse-spark-1.2', 'MUSE-SPARK-1.3']) {
+test('modelCaps prefers metadata caps, falls back to constants', () => {
+  assert.deepEqual(modelCaps({ context: 1048576, output: 131072 }), { contextWindow: 1048576, maxTokens: 131072 })
+  assert.deepEqual(modelCaps({ output: 64000 }), { contextWindow: 262144, maxTokens: 64000 })
+  assert.deepEqual(modelCaps(undefined), { contextWindow: 262144, maxTokens: 32768 })
+})
+
+test('resolveModel advertises metadata caps, constants when silent', () => {
+  const stubBase = {
+    list: () => [] as string[],
+    decision: () => ({ allowed: true, source: 'test', known: true }),
+    reasoningCapability: () => undefined,
+  }
+  const withCaps = new ZenAdapter({ ...stubBase, limits: () => ({ context: 1048576, output: 131072 }) })
+  const resolved = withCaps.resolveModel('opencode2dsh', 'muse-spark-1.3-contributor-free')
+  assert.deepEqual(resolved.context, { contextWindow: 1048576 })
+  assert.equal(resolved.defaultMaxTokens, 131072)
+  const silent = new ZenAdapter(stubBase)
+  const fallback = silent.resolveModel('opencode2dsh', 'ghost')
+  assert.deepEqual(fallback.context, { contextWindow: 262144 })
+  assert.equal(fallback.defaultMaxTokens, 32768)
+})
+
+test('isResponsesModel routes muse-spark to responses, everything else to chat', () => {  for (const id of ['muse-spark-1.3-contributor-free', 'muse-spark-1.2-contributor-free', 'muse-spark-1.2', 'MUSE-SPARK-1.3']) {
     assert.equal(isResponsesModel(id), true, id)
   }
   for (const id of ['big-pickle', 'mimo-v2.5-free', 'deepseek-v4-flash', '']) {

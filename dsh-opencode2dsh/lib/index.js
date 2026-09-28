@@ -1,4 +1,4 @@
-import { a as defaultCachePath, d as disguiseHeaders, n as ZEN_BASE_URL, t as ModelCatalog, u as deriveRequestIDs } from "./catalog-4gwZT9We.js";
+import { a as defaultCachePath, d as disguiseHeaders, n as ZEN_BASE_URL, t as ModelCatalog, u as deriveRequestIDs } from "./catalog-CJIBS2_L.js";
 import { i as toPiContext, n as ensureFreeLaneShape } from "./messages-PSa7_wRp.js";
 import { n as routingContext } from "./dispatcher-C9pQXvDo.js";
 import { a as shouldRotate, r as isRegionBlocked, t as classifyStreamFailure } from "./rotate-o6Ljmrzr.js";
@@ -256,6 +256,13 @@ function resolveZenApiKey(options = {}) {
 const PROVIDER_ID = "opencode2dsh";
 const DEFAULT_CONTEXT_WINDOW = 262144;
 const DEFAULT_MAX_TOKENS = 32768;
+/** Caps for one model: live metadata when it speaks, conservative constants otherwise. */
+function modelCaps(limits) {
+	return {
+		contextWindow: limits?.context ?? DEFAULT_CONTEXT_WINDOW,
+		maxTokens: limits?.output ?? DEFAULT_MAX_TOKENS
+	};
+}
 /**
 * Reasoning-effort vocabulary the adapter owns end to end (dsh-llm treats the
 * ids as opaque: whatever resolveModel advertises comes back on
@@ -364,14 +371,17 @@ function terminalErrorEvent(errorMessage, model) {
 function isResponsesModel(id) {
 	return String(id ?? "").toLowerCase().startsWith("muse-spark");
 }
-function toPiModel(id, reasoning) {
+function toPiModel(id, reasoning, limits) {
+	const isResponses = isResponsesModel(id);
+	const caps = modelCaps(limits);
 	return {
 		id,
 		name: id,
-		api: isResponsesModel(id) ? "openai-responses" : "openai-completions",
+		api: isResponses ? "openai-responses" : "openai-completions",
 		provider: PROVIDER_ID,
 		baseUrl: `${ZEN_BASE_URL.replace(/\/+$/, "")}/v1`,
 		reasoning,
+		thinkingLevelMap: { off: null },
 		input: ["text"],
 		cost: {
 			input: 0,
@@ -379,8 +389,8 @@ function toPiModel(id, reasoning) {
 			cacheRead: 0,
 			cacheWrite: 0
 		},
-		contextWindow: DEFAULT_CONTEXT_WINDOW,
-		maxTokens: DEFAULT_MAX_TOKENS
+		contextWindow: caps.contextWindow,
+		maxTokens: caps.maxTokens
 	};
 }
 var ZenAdapter = class {
@@ -453,13 +463,14 @@ var ZenAdapter = class {
 		return models;
 	}
 	resolveModel(provider, model) {
+		const caps = modelCaps(this.#catalog.limits?.(model));
 		const resolved = {
 			provider,
 			id: model,
 			name: model,
 			inputModalities: ["text"],
-			context: { contextWindow: DEFAULT_CONTEXT_WINDOW },
-			defaultMaxTokens: DEFAULT_MAX_TOKENS
+			context: { contextWindow: caps.contextWindow },
+			defaultMaxTokens: caps.maxTokens
 		};
 		const efforts = reasoningEfforts(this.#catalog.reasoningCapability(model));
 		if (efforts) resolved.reasoning = { efforts };
@@ -484,7 +495,7 @@ var ZenAdapter = class {
 	async *stream(options) {
 		const context = toPiContext(options);
 		const ids = deriveRequestIDs(options.messages);
-		const model = toPiModel(options.model, this.#catalog.reasoningCapability(options.model)?.reasoning === true);
+		const model = toPiModel(options.model, this.#catalog.reasoningCapability(options.model)?.reasoning === true, this.#catalog.limits?.(options.model));
 		const contextStore = {
 			model: options.model,
 			session: ids.session
@@ -918,7 +929,7 @@ async function writeAgentConfig(paths, options) {
 }
 
 //#endregion
-//#region node_modules/.pnpm/@deepseek-ai+cosmokit@1.8.2/node_modules/@deepseek-ai/cosmokit/lib/index.js
+//#region node_modules/.pnpm/@deepseek-ai+cosmokit@1.8.5/node_modules/@deepseek-ai/cosmokit/lib/index.js
 /** Return true when a value is `null` or `undefined`. */
 function isNullable(value) {
 	return value === null || value === void 0;
@@ -931,6 +942,8 @@ function defineProperty(object, key, value) {
 		enumerable: false
 	});
 }
+/** Shared config references used by schema validators and plugin runtimes. */
+const write = Symbol.for("cosmokit.volatile.write");
 /** Test values using `instanceof` with a `toStringTag` fallback. */
 function is(type, value) {
 	if (arguments.length === 1) return (value$1) => is(type, value$1);
@@ -1092,7 +1105,7 @@ var Time;
 })(Time || (Time = {}));
 
 //#endregion
-//#region node_modules/.pnpm/@deepseek-ai+cordis@4.0.1_@deepseek-ai+cordis-plugin-include@1.0.7_@deepseek-ai+cordis-plugin-loader@1.0.3/node_modules/@deepseek-ai/cordis/lib/index.js
+//#region node_modules/.pnpm/@deepseek-ai+cordis@4.0.4_@deepseek-ai+cordis-plugin-include@1.0.9_@deepseek-ai+cordis-plugin-loader@1.0.5/node_modules/@deepseek-ai/cordis/lib/index.js
 /** Ordered collection of disposable values with O(1) deletion by value. */
 var DisposableList = class {
 	sn = 0;
@@ -1701,8 +1714,9 @@ var LoggerService = class LoggerService$1 {
 	*/
 	exporter(exporter) {
 		return this.ctx.effect(() => {
-			this.exporters.set(++this._snExporter, exporter);
-			return () => this.exporters.delete(this._snExporter);
+			const id = ++this._snExporter;
+			this.exporters.set(id, exporter);
+			return () => this.exporters.delete(id);
 		}, "ctx.logger.exporter()");
 	}
 	_resolveConfig() {
@@ -2505,8 +2519,8 @@ var Fiber = class {
 	*
 	* @param config — the new raw config; validated before anything restarts.
 	* @param noSave — hint for persistence hooks not to write the change back.
-	* @returns the update waterfall result; the default restart returns a promise.
-	* @throws when validation, an update listener, or the restarted plugin fails.
+	* @returns nothing; the restart runs behind the `internal/update` waterfall.
+	* @throws {ValidationError} when the new config fails validation.
 	*/
 	update(config, noSave = false) {
 		this.assertActive();
@@ -2518,7 +2532,7 @@ var Fiber = class {
 			return;
 		}
 		config = this._resolveConfig(config);
-		return this.context.waterfall(this, "internal/update", config, noSave, () => {
+		this.context.waterfall(this, "internal/update", config, noSave, () => {
 			this.config = config;
 			this._error = void 0;
 			return this.restart();
@@ -2905,7 +2919,7 @@ var Service = class Service$1 {
 };
 
 //#endregion
-//#region node_modules/.pnpm/@deepseek-ai+dsh-settings@0.1.1-rc.2_@deepseek-ai+cordis@4.0.1_@deepseek-ai+dsh-brand@0_02aaf429ec98c58247037e2222c17a8f/node_modules/@deepseek-ai/dsh-settings/lib/index.js
+//#region node_modules/.pnpm/@deepseek-ai+dsh-settings@0.1.1-rc.2_@deepseek-ai+cordis@4.0.4_@deepseek-ai+dsh-brand@0_3f7b4c65618d13ab20e914b5d262b445/node_modules/@deepseek-ai/dsh-settings/lib/index.js
 /**
 * Structural secret redaction for settings values. `role('secret')` fields are
 * removed from a value before it crosses a wire boundary; a sidecar records
@@ -3739,7 +3753,7 @@ function makeBridgeHandlers(runtime, settings, deps = {}) {
 			};
 		},
 		async models() {
-			const { staticFreeModels } = await import("./catalog-BQLvguGH.js");
+			const { staticFreeModels } = await import("./catalog-BYXpjjBi.js");
 			const rows = staticFreeModels.map((id) => ({
 				id,
 				verified: true
@@ -3846,7 +3860,7 @@ function withDefaults(value) {
 	};
 }
 const defaultAssemble = async (config, logger) => {
-	const { startIpPool } = await import("./ip-pool-p3Wh9JaB.js");
+	const { startIpPool } = await import("./ip-pool-oe5ViiNi.js");
 	return startIpPool(config, logger);
 };
 /**

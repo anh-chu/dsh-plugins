@@ -132,6 +132,48 @@ test('decodeModelsDev extracts the reasoning flag and declared effort ladders', 
   assert.deepEqual(prices.get('mystery-free'), price(0, 0))
 })
 
+test('decodeModelsDev reads limit.context/limit.output, ignores junk', () => {
+  const prices = decodeModelsDev({
+    opencode: {
+      models: {
+        'muse-free': { cost: { input: 0, output: 0 }, limit: { context: 1048576, output: 131072 } },
+        'plain-free': { cost: { input: 0, output: 0 } },
+        'junk-free': { cost: { input: 0, output: 0 }, limit: { context: 'big', output: NaN } },
+      },
+    },
+  })
+  assert.equal(prices.get('muse-free')?.limitContext, 1048576)
+  assert.equal(prices.get('muse-free')?.limitOutput, 131072)
+  assert.equal(prices.get('plain-free')?.limitContext, undefined)
+  assert.equal(prices.get('plain-free')?.limitOutput, undefined)
+  assert.equal(prices.get('junk-free')?.limitContext, undefined)
+  assert.equal(prices.get('junk-free')?.limitOutput, undefined)
+})
+
+test('ModelCatalog.limits prefers metadata, undefined when silent', async () => {
+  const catalog = new ModelCatalog({
+    fetchImpl: fakeFetch({
+      'https://opencode.ai/zen/v1/models': { data: [{ id: 'muse-free' }, { id: 'plain-free' }] },
+      'https://models.dev/api.json': {
+        opencode: {
+          models: {
+            'muse-free': { cost: { input: 0, output: 0 }, limit: { context: 1048576, output: 131072 } },
+            'plain-free': { cost: { input: 0, output: 0 } },
+          },
+        },
+      },
+    }),
+  })
+  try {
+    await catalog.refreshOnce()
+    assert.deepEqual(catalog.limits('muse-free'), { context: 1048576, output: 131072 })
+    assert.equal(catalog.limits('plain-free'), undefined)
+    assert.equal(catalog.limits('ghost'), undefined)
+  } finally {
+    catalog.stop()
+  }
+})
+
 test('ModelCatalog.reasoningCapability reads the parsed metadata', async () => {
   const catalog = new ModelCatalog({
     fetchImpl: fakeFetch({

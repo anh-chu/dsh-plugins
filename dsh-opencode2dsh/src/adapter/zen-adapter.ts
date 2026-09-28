@@ -35,10 +35,22 @@ export interface CatalogLike {
   list(): string[]
   decision(model: string): { allowed: boolean; source: string; known: boolean }
   reasoningCapability(model: string): { reasoning: boolean; effortValues: string[] } | undefined
+  limits?(model: string): { context?: number; output?: number } | undefined
 }
 
 const DEFAULT_CONTEXT_WINDOW = 262144
 const DEFAULT_MAX_TOKENS = 32768
+
+/** Caps for one model: live metadata when it speaks, conservative constants otherwise. */
+export function modelCaps(limits: { context?: number; output?: number } | undefined): {
+  contextWindow: number
+  maxTokens: number
+} {
+  return {
+    contextWindow: limits?.context ?? DEFAULT_CONTEXT_WINDOW,
+    maxTokens: limits?.output ?? DEFAULT_MAX_TOKENS,
+  }
+}
 
 /**
  * Reasoning-effort vocabulary the adapter owns end to end (dsh-llm treats the
@@ -147,8 +159,9 @@ export function isResponsesModel(id: string): boolean {
   return String(id ?? '').toLowerCase().startsWith('muse-spark')
 }
 
-function toPiModel(id: string, reasoning: boolean): Model<Api> {
+function toPiModel(id: string, reasoning: boolean, limits?: { context?: number; output?: number }): Model<Api> {
   const isResponses = isResponsesModel(id)
+  const caps = modelCaps(limits)
   return {
     id,
     name: id,
@@ -160,10 +173,15 @@ function toPiModel(id: string, reasoning: boolean): Model<Api> {
     // supportsDeveloperRole=false for opencode.ai, so the system slot is
     // unchanged either way).
     reasoning,
+    // pi-ai's Responses builder defaults an unset effort to
+    // `thinkingLevelMap.off ?? "none"` — and Zen rejects `none`. Mark off as
+    // unsupported (null) so an unselected effort sends no reasoning field at
+    // all (provider default); explicit levels ride our onPayload rewrite.
+    thinkingLevelMap: { off: null },
     input: ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: DEFAULT_CONTEXT_WINDOW,
-    maxTokens: DEFAULT_MAX_TOKENS,
+    contextWindow: caps.contextWindow,
+    maxTokens: caps.maxTokens,
   }
 }
 
@@ -256,13 +274,14 @@ export class ZenAdapter {
     defaultMaxTokens: number
     reasoning?: { efforts: ZenReasoningEffort[] }
   } {
+    const caps = modelCaps(this.#catalog.limits?.(model))
     const resolved: ReturnType<ZenAdapter['resolveModel']> = {
       provider,
       id: model,
       name: model,
       inputModalities: ['text'],
-      context: { contextWindow: DEFAULT_CONTEXT_WINDOW },
-      defaultMaxTokens: DEFAULT_MAX_TOKENS,
+      context: { contextWindow: caps.contextWindow },
+      defaultMaxTokens: caps.maxTokens,
     }
     // The thinking-level picker: dsh-llm validates every selected id against
     // this list and echoes the choice back on GenerateOptions.reasoningEffort.
@@ -294,7 +313,11 @@ export class ZenAdapter {
   async *stream(options: HarnessGenerateOptions): AsyncGenerator<HarnessChunk> {
     const context = toPiContext(options)
     const ids = deriveRequestIDs(options.messages)
-    const model = toPiModel(options.model, this.#catalog.reasoningCapability(options.model)?.reasoning === true)
+    const model = toPiModel(
+      options.model,
+      this.#catalog.reasoningCapability(options.model)?.reasoning === true,
+      this.#catalog.limits?.(options.model),
+    )
     // IP-pool routing context (docs/ip-pool.md 3.3): pi-ai builds the request
     // body and dispatches it on separate layers with no channel for "which
     // model is this fetch for", so the per-request context rides AsyncLocalStorage.

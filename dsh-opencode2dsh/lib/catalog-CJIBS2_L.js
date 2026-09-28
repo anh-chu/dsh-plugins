@@ -195,13 +195,18 @@ function decodeModelsDev(data) {
 			if (!raw || typeof raw !== "object") continue;
 			const modelId = typeof raw.id === "string" && raw.id.length > 0 ? raw.id : modelKey;
 			const cost = raw.cost ?? {};
+			const limit = raw.limit ?? {};
 			const num = (value) => typeof value === "number" && Number.isFinite(value) ? value : void 0;
+			const limitContext = num(limit.context);
+			const limitOutput = num(limit.output);
 			result.set(modelId, {
 				input: num(cost.input),
 				output: num(cost.output),
 				deprecated: metadataDeprecated(raw),
 				reasoning: raw.reasoning === true,
-				...decodeEffortValues(raw.reasoning_options)
+				...decodeEffortValues(raw.reasoning_options),
+				...limitContext !== void 0 ? { limitContext } : {},
+				...limitOutput !== void 0 ? { limitOutput } : {}
 			});
 		}
 		if (result.size > 0) return result;
@@ -368,6 +373,20 @@ var ModelCatalog = class {
 		return {
 			reasoning: price.reasoning === true,
 			effortValues: price.effortValues ?? []
+		};
+	}
+	/**
+	* models.dev per-model caps for one model: `limit.context`/`limit.output`.
+	* undefined when the metadata cannot speak (pending, or id absent, or no
+	* limit block) — callers fall back to the conservative constants.
+	*/
+	limits(model) {
+		const price = this.#prices.get(model);
+		if (!price) return void 0;
+		if (price.limitContext === void 0 && price.limitOutput === void 0) return void 0;
+		return {
+			context: price.limitContext,
+			output: price.limitOutput
 		};
 	}
 	/** healthz models block (design.md 6.1). */

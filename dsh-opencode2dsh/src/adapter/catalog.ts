@@ -51,6 +51,10 @@ interface ModelPrice {
   reasoning?: boolean
   /** models.dev `reasoning_options` effort values the model declares (e.g. ["low","high"]). */
   effortValues?: string[]
+  /** models.dev `limit.context`: real context window (not the 262144 guess). */
+  limitContext?: number
+  /** models.dev `limit.output`: real output cap (not the 32768 guess). */
+  limitOutput?: number
 }
 
 /** Decide (model_metadata.go Decide, ported with the deprecation fix).
@@ -116,14 +120,19 @@ export function decodeModelsDev(data: unknown): Map<string, ModelPrice> {
       if (!raw || typeof raw !== 'object') continue
       const modelId = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : modelKey
       const cost = (raw.cost ?? {}) as Record<string, unknown>
+      const limit = (raw.limit ?? {}) as Record<string, unknown>
       const num = (value: unknown): number | undefined =>
         typeof value === 'number' && Number.isFinite(value) ? value : undefined
+      const limitContext = num(limit.context)
+      const limitOutput = num(limit.output)
       result.set(modelId, {
         input: num(cost.input),
         output: num(cost.output),
         deprecated: metadataDeprecated(raw),
         reasoning: raw.reasoning === true,
         ...decodeEffortValues(raw.reasoning_options),
+        ...(limitContext !== undefined ? { limitContext } : {}),
+        ...(limitOutput !== undefined ? { limitOutput } : {}),
       })
     }
     if (result.size > 0) return result
@@ -336,6 +345,18 @@ export class ModelCatalog {
     const price = this.#prices.get(model)
     if (!price) return undefined
     return { reasoning: price.reasoning === true, effortValues: price.effortValues ?? [] }
+  }
+
+  /**
+   * models.dev per-model caps for one model: `limit.context`/`limit.output`.
+   * undefined when the metadata cannot speak (pending, or id absent, or no
+   * limit block) — callers fall back to the conservative constants.
+   */
+  limits(model: string): { context?: number; output?: number } | undefined {
+    const price = this.#prices.get(model)
+    if (!price) return undefined
+    if (price.limitContext === undefined && price.limitOutput === undefined) return undefined
+    return { context: price.limitContext, output: price.limitOutput }
   }
 
   /** healthz models block (design.md 6.1). */
