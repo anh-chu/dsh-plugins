@@ -23,6 +23,9 @@ Host fetch patch replicating the routing-critical part of `pi-claude-oauth-adapt
 ### dsh-mobile-harden (`./dsh-mobile-harden` v0.1.0)
 Mobile hardening for the DSH web UI (touch layouts only, desktop untouched): Enter inserts a newline in the composer instead of sending; viewport pinned to `maximum-scale=1, user-scalable=no` plus `touch-action: manipulation` kills tap/focus/double-tap zoom; text selection and long-press callout blocked on app chrome but kept in messages and fields; composer autofocus on session switch is dropped so the keyboard stays away; tapping a session closes the narrow overlay sidebar. Requires `inject: ["webServer"]` on the Host half — without it the row can apply before the service exists and the viewport tap silently never registers.
 
+### dsh-opencode2dsh (`./dsh-opencode2dsh`, package `@opencode2dsh/dsh-plugin` v0.3.3)
+Fork snapshot of [FishBottle7/opencode2dsh](https://github.com/FishBottle7/opencode2dsh) (codeOct PR #25 branch) with local fixes for DSH 0.1.7: client calls `ctx.slots.inject` as a method with a plain callback (the detached generator call failed web boot); `muse-spark-*` requests use nested `reasoning: { effort }` and omit the field when Off; Zen bearer key resolves from `zenApiKey` config → `OPENCODE_ZEN_API_KEY` env → the OpenCode CLI login (`~/.local/share/opencode/auth.json`) → anonymous `public`, so metered use bills to the account quota instead of the shared per-IP bucket. `src/` + `test/` included; rebuild with `pnpm install && pnpm build && pnpm build:client`.
+
 ## Install
 
 In `~/.dsh/profiles/web/package.json`:
