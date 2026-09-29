@@ -1,0 +1,44 @@
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -884,8 +884,17 @@
+     ctx.effect(function () { syncStyleAttribute(); return styleStore.subscribe(syncStyleAttribute); });
+ 
+     const sessions = ctx.get('sessions');
+-    if (!sessions || typeof sessions.open !== 'function') {
+-      throw new Error('[dsh-plugin-message-edit] Missing DSH session navigation service. Check client dependencies and restart DSH.');
++    if (!sessions) {
++      throw new Error('[dsh-plugin-message-edit] Missing DSH sessions service. Check client dependencies and restart DSH.');
++    }
++    if (typeof sessions.open !== 'function') {
++      // DSH 0.1.7 moved session navigation off sessions.open onto
++      // uiWorkspace.openSession; adapt in place so the call sites below are unchanged.
++      const uiWorkspace = ctx.get('uiWorkspace');
++      if (!uiWorkspace || typeof uiWorkspace.openSession !== 'function') {
++        throw new Error('[dsh-plugin-message-edit] Missing DSH session navigation service. Check client dependencies and restart DSH.');
++      }
++      sessions.open = function (id) { return uiWorkspace.openSession(id); };
+     }
+ 
+     ctx.effect(function () {
+--- a/plugin.client.js
++++ b/plugin.client.js
+@@ -864,8 +864,17 @@
+     ctx.effect(function () { syncStyleAttribute(); return styleStore.subscribe(syncStyleAttribute); });
+ 
+     const sessions = ctx.get('sessions');
+-    if (!sessions || typeof sessions.open !== 'function') {
+-      throw new Error('[dsh-plugin-message-edit] Missing DSH session navigation service. Check client dependencies and restart DSH.');
++    if (!sessions) {
++      throw new Error('[dsh-plugin-message-edit] Missing DSH sessions service. Check client dependencies and restart DSH.');
++    }
++    if (typeof sessions.open !== 'function') {
++      // DSH 0.1.7 moved session navigation off sessions.open onto
++      // uiWorkspace.openSession; adapt in place so the call sites below are unchanged.
++      const uiWorkspace = ctx.get('uiWorkspace');
++      if (!uiWorkspace || typeof uiWorkspace.openSession !== 'function') {
++        throw new Error('[dsh-plugin-message-edit] Missing DSH session navigation service. Check client dependencies and restart DSH.');
++      }
++      sessions.open = function (id) { return uiWorkspace.openSession(id); };
+     }
+ 
+     ctx.effect(function () {

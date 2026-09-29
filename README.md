@@ -26,6 +26,9 @@ Mobile hardening for the DSH web UI (touch layouts only, desktop untouched): Ent
 ### dsh-opencode2dsh (`./dsh-opencode2dsh`, package `@opencode2dsh/dsh-plugin` v0.3.3)
 Fork snapshot of [FishBottle7/opencode2dsh](https://github.com/FishBottle7/opencode2dsh) (codeOct PR #25 branch) with local fixes for DSH 0.1.7: client calls `ctx.slots.inject` as a method with a plain callback (the detached generator call failed web boot); `muse-spark-*` requests use nested `reasoning: { effort }` and omit the field when Off; Zen bearer key resolves from `zenApiKey` config → `OPENCODE_ZEN_API_KEY` env → the OpenCode CLI login (`~/.local/share/opencode/auth.json`) → anonymous `public`, so metered use bills to the account quota instead of the shared per-IP bucket. `src/` + `test/` included; rebuild with `pnpm install && pnpm build && pnpm build:client`.
 
+### dsh-plugin-message-edit (`./dsh-plugin-message-edit`, package `dsh-plugin-message-edit` v1.1.0-local.1)
+Fork snapshot of [SpookySandwich/dsh-plugin-message-edit](https://github.com/SpookySandwich/dsh-plugin-message-edit) 1.1.0 (MIT) with one local fix so the browser half boots on DSH 0.1.7-rc.2: the client's hard `sessions.open` requirement is polyfilled from `ctx.uiWorkspace.openSession` — 0.1.7 dropped `open` from the client `sessions` service and moved session navigation to `uiWorkspace`, so upstream fails web boot with `1 entry did not activate`. Order matters: `@deepseek-ai/dsh-client-modules` snapshots the client bundle when the loader entry activates, so an in-place `node_modules` edit is *not* picked up by a page reload — the patched files must be on disk before install. Install this folder, not the npm package. See [COMPAT-0.1.7.md](./dsh-plugin-message-edit/COMPAT-0.1.7.md) and `node test/compat-0.1.7.cjs` (8 assertions); `0.1.7-nav-compat.patch` re-applies the change to a future upstream release.
+
 ## Install
 
 In `~/.dsh/profiles/web/package.json`:
@@ -35,14 +38,16 @@ In `~/.dsh/profiles/web/package.json`:
   "dependencies": {
     "dsh-wenlan": "file:/path/to/dsh-plugins/dsh-wenlan",
     "dsh-session-model-badge": "file:/path/to/dsh-plugins/dsh-session-model-badge",
-    "dsh-wiki-viewer": "file:/path/to/dsh-plugins/dsh-wiki-viewer"
+    "dsh-wiki-viewer": "file:/path/to/dsh-plugins/dsh-wiki-viewer",
+    "dsh-plugin-message-edit": "file:/path/to/dsh-plugins/dsh-plugin-message-edit"
   },
   "dsh": {
     "profile": {
       "bundles": [
         "dsh-wenlan",
         "dsh-session-model-badge",
-        "dsh-wiki-viewer"
+        "dsh-wiki-viewer",
+        "dsh-plugin-message-edit"
       ]
     }
   }
