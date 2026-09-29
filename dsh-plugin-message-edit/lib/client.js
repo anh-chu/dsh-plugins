@@ -873,7 +873,7 @@ const CSS = [
 return {
   // Module dependencies load code; Cordis injection waits for its services.
   // The session controller becomes ready asynchronously after connection.
-  inject: ['slots', 'sessions', 'locale'],
+  inject: ['slots', 'sessions', 'locale', 'uiWorkspace'],
   apply(ctx) {
     const slots = ctx.get('slots');
     if (slots === undefined) {

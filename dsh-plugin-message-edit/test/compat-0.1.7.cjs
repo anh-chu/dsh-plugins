@@ -84,6 +84,15 @@ const ctx = {
 const results = [];
 const check = (name, ok, detail) => { results.push({ name, ok, detail: detail || '' }); };
 
+// The 0.1.7 client runtime only lets a plugin touch services it declares in
+// `inject`; reading uiWorkspace without declaring it failed entry activation
+// with "dsh-plugin-message-edit: failed" and no console message.
+check(
+  'client face declares uiWorkspace in inject',
+  Array.isArray(plugin.inject) && plugin.inject.includes('uiWorkspace'),
+  JSON.stringify(plugin.inject)
+);
+
 plugin.apply(ctx); // the original bug threw here on 0.1.7
 
 check('apply() does not throw without sessions.open', true);
