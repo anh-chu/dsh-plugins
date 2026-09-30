@@ -16,11 +16,16 @@ with `Authorization: Bearer sk-ant-oat*`:
 
 1. Prepends `system[0]` billing header (see format below). No-op when
    already present.
-2. Withholds `memory_get` from `tools` (configurable via `dropTools`).
-   Proven by wire bisection 2026-09-17: Anthropic lanes the mneme
-   `memory_get` + `memory_search` tool-name pair to extra usage (either
-   alone passes, renamed pair passes). `memory_search` results already
-   carry full entry content, so this is near-lossless. Set `dropTools: []`
+2. Withholds the flagging tool names from `tools` (configurable via
+   `dropTools`, default `memory_get`, `mcp_describe_tool`,
+   `mcp_execute_tool`, `mcp_search_tools`). Proven by wire bisection
+   2026-09-30 against a captured 60-tool DSH agent body: Anthropic lanes a
+   request to metered extra usage based on the tool NAMES it carries, not
+   its size (renaming every tool, schemas untouched, stays in the plan
+   lane). Two name families trip it and BOTH must be cleared — any one of
+   the `mcp_*` meta-tools plus at least one `memory_*` tool. Dropping only
+   `memory_get` (the previous default) is no longer sufficient because the
+   `mcp_*` meta-tools arrived with DSH's MCP support. Set `dropTools: []`
    to disable.
 
 ```

@@ -39,13 +39,21 @@
 //   - never touches headers, beta flags, or user-agent
 //   - never touches usage / models / profile / token endpoints
 //
-// Proven in this setup (debug log, 2026-09-17): the billing header alone is
-// NOT sufficient — injected requests still billed to extra usage. So the
-// patch additionally rewrites metadata.user_id into the CLI shape
-// `user_dshhost_account_<uuid>_session_<id>`, carrying the real account UUID
-// from ~/.claude.json and preserving the harness session id as the session
-// part. Remaining known gaps, deliberately untouched: anthropic-beta flag
-// list (owned by the subscriptions plugin) and system-prompt content.
+// Proven in this setup (wire bisection, 2026-09-30): the billing header plus
+// the CLI identity block is enough to stay in the plan lane for a request
+// that carries no flagged tool names. What flips a request to metered extra
+// usage is the tool-name list: with an otherwise byte-identical body,
+// renaming every tool keeps it in the plan lane, and the mcp_* meta-tools
+// plus the memory_* family are the flagging names. See `dropTools` below.
+//
+// NOT a factor (each tested against a real failing body, all still 400):
+// metadata.user_id shape, the anthropic-beta flag list, max_tokens, the
+// system prompt, the message content, and total request size. An earlier
+// revision of this comment claimed metadata.user_id moves the lane; that
+// was never implemented and the measurement does not support it.
+//
+// Remaining known gap, deliberately untouched: anthropic-beta flag list
+// (owned by the subscriptions plugin).
 
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -62,7 +70,7 @@ export const BILLING_SALT = "59cf53e54c78";
 const VERSION_FALLBACK = "2.1.263";
 const MESSAGES_PATH = "api.anthropic.com/v1/messages";
 
-function resolveConfig(config = {}) {
+export function resolveConfig(config = {}) {
   const entrypoint =
     typeof config.entrypoint === "string" && config.entrypoint.length > 0
       ? config.entrypoint
@@ -75,13 +83,23 @@ function resolveConfig(config = {}) {
       typeof config.debugFile === "string" && config.debugFile.length > 0
         ? config.debugFile
         : undefined,
-    // Tool names withheld from Anthropic OAuth bodies. Default drops
-    // memory_get: Anthropic lanes the memory_get + memory_search name pair
-    // to extra usage, and memory_search results already carry full content.
-    // Set [] to disable.
+    // Tool names withheld from Anthropic OAuth bodies. Anthropic lanes a
+    // request to metered extra usage based on the tool NAMES it carries.
+    // Two name families trip it, and BOTH must be cleared: any one of the
+    // mcp_* meta-tools plus at least one memory_* tool. Verified by wire
+    // bisection 2026-09-30 against a captured 60-tool DSH agent body:
+    //   drop nothing                       -> 400 extra usage
+    //   drop 3 mcp_* only                  -> 400
+    //   drop memory_* only                 -> 400
+    //   drop 3 mcp_* + any one memory_*    -> 200
+    //   drop 2 mcp_* + memory_get          -> 400
+    //   rename EVERY tool (same schemas)   -> 200   (names, not size)
+    // The list is a server-side classifier's blocklist, so it can change
+    // without notice: re-bisect with vet-lane.mjs if extra-usage 400s
+    // return. Set [] to disable.
     dropTools: Array.isArray(config.dropTools)
       ? config.dropTools.map(String)
-      : ["memory_get"],
+      : ["memory_get", "mcp_describe_tool", "mcp_execute_tool", "mcp_search_tools"],
     // Temporary diagnostic: when set, the pre-rewrite OAuth messages body is
     // written here (overwrite) so an exact failing request can be replayed
     // outside the DSH stack. Local file only; contains system prompt + tools.

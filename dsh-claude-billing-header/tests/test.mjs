@@ -8,6 +8,7 @@ import {
   isOAuthMessagesRequest,
   messageText,
   patchFetch,
+  resolveConfig,
 } from "../lib/index.js";
 
 // 1. Header format matches the Pi adapter shape.
@@ -207,4 +208,18 @@ import {
   assert.equal(sent.system[0].text.startsWith(BILLING_PREFIX), true);
 }
 
-console.log("dsh-claude-billing-header: 12 tests passed");
+// 13. Default dropTools clears BOTH flagging name families. Regression guard:
+// dropping only memory_get was measured insufficient once the mcp_* meta-tools
+// were in the tool list (wire bisection 2026-09-30).
+{
+  assert.deepEqual(resolveConfig({}).dropTools, [
+    "memory_get",
+    "mcp_describe_tool",
+    "mcp_execute_tool",
+    "mcp_search_tools",
+  ]);
+  assert.deepEqual(resolveConfig({ dropTools: [] }).dropTools, []);
+  assert.deepEqual(resolveConfig({ dropTools: ["x"] }).dropTools, ["x"]);
+}
+
+console.log("dsh-claude-billing-header: 13 tests passed");
