@@ -52,10 +52,17 @@ check('client inject 只声明 0.2 提供的服务', () => {
   const match = clientBundle.match(/inject = (\[[^\]]*\])/)
   assert.ok(match, '未在构建产物里找到 inject 数组')
   const inject = JSON.parse(match[1].replace(/'/g, '"'))
-  assert.deepEqual(inject, ['slots', 'locale', 'connection'])
+  assert.deepEqual(inject, ['slots', 'locale', 'connection', 'remote', 'remote.session'])
   for (const gone of ['settingsScope', 'conversationEvents']) {
     assert.ok(!inject.includes(gone), `inject 仍声明了 0.2 不提供的服务：${gone}`)
   }
+})
+
+check('模型目录走 0.2 的 Host Remote（remote.session.modelCatalog）', () => {
+  assert.ok(clientBundle.includes('modelCatalog'), '构建产物里没有 modelCatalog 调用')
+  assert.ok(!clientBundle.includes('llm.models'), '仍在用 0.1.x 的 connection.api.llm.models')
+  assert.ok(/\["slots", "locale", "connection", "remote", "remote\.session"\]/.test(clientBundle)
+    || clientBundle.includes('"remote.session"'), '未声明 remote.session 命名空间')
 })
 
 check('设置卡片挂 settings.plugins.tab 且数据走 configForms', () => {

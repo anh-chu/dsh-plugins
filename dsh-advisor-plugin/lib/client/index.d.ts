@@ -29,6 +29,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  * settingsScope / configForms 刻意不在此列——它们跨版本互斥且并非人人提供，
  * 进 inject 的代价是整个条目停在 pending；改由 apply 内的 ctx.inject 软等待
  * （见 settings-controller.ts）。
+ *
+ * remote / remote.session 是另一回事：0.2 的 Host Remote 命名空间就是 inject
+ * 令牌（官方 composer 的模型选择器同样依赖 remote.session），模型目录
+ * `ctx.remote.session.modelCatalog()` 是 0.2 唯一的数据源，故显式声明。
  */
 export declare const inject: string[];
 export declare function apply(ctx: ClientContext): void;

@@ -1,15 +1,16 @@
 /**
  * controller —— Advisor 设置卡片的暂存编辑器（浏览器半）。
  *
- * 数据面（均为 rc.6 客户端服务）：
- *   - 设置：ctx.settingsScope.bind({namespace:'advisor'}) —— 快照/订阅/
- *     set(field, value) 逐字段写入（写的是用户层 ~/.dsh/settings.yaml）
- *   - 模型目录：ctx.get('connection').api.llm.models({}) —— 枚举 DSH 已
- *     配置的全部 provider 与模型，正是"选择 DSH 已经配置好的模型"的数据源
+ * 数据面（0.2 形态）：
+ *   - 设置：configForms 里本插件条目的表单（见 settings-controller.ts）——
+ *     快照/订阅/set(field, value) 逐字段写入条目 Config
+ *   - 模型目录：ctx.remote.session.modelCatalog() —— 枚举本部署当前可路由的
+ *     全部 provider 与模型，正是"选择 DSH 已经配置好的模型"的数据源，
+ *     与官方 composer 的模型选择器同源
  *
  * 暂存语义：改动先进 draft，save 一次性逐字段写入；discard 丢掉 draft。
  * 类型上不依赖官方 client 包的模块增强（rc 阶段漂移面大），
- * 连接 API 在边界做一次结构化收窄——白皮书第 3/4 章的边界放宽纪律。
+ * 两个 Remotes/表单面都在边界做一次结构化收窄——白皮书第 3/4 章的边界放宽纪律。
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis';
 import { type SnapshotStore } from './store.js';

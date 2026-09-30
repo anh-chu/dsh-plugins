@@ -1,15 +1,16 @@
 /**
  * controller —— Advisor 设置卡片的暂存编辑器（浏览器半）。
  *
- * 数据面（均为 rc.6 客户端服务）：
- *   - 设置：ctx.settingsScope.bind({namespace:'advisor'}) —— 快照/订阅/
- *     set(field, value) 逐字段写入（写的是用户层 ~/.dsh/settings.yaml）
- *   - 模型目录：ctx.get('connection').api.llm.models({}) —— 枚举 DSH 已
- *     配置的全部 provider 与模型，正是"选择 DSH 已经配置好的模型"的数据源
+ * 数据面（0.2 形态）：
+ *   - 设置：configForms 里本插件条目的表单（见 settings-controller.ts）——
+ *     快照/订阅/set(field, value) 逐字段写入条目 Config
+ *   - 模型目录：ctx.remote.session.modelCatalog() —— 枚举本部署当前可路由的
+ *     全部 provider 与模型，正是"选择 DSH 已经配置好的模型"的数据源，
+ *     与官方 composer 的模型选择器同源
  *
  * 暂存语义：改动先进 draft，save 一次性逐字段写入；discard 丢掉 draft。
  * 类型上不依赖官方 client 包的模块增强（rc 阶段漂移面大），
- * 连接 API 在边界做一次结构化收窄——白皮书第 3/4 章的边界放宽纪律。
+ * 两个 Remotes/表单面都在边界做一次结构化收窄——白皮书第 3/4 章的边界放宽纪律。
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -40,19 +41,38 @@ export interface CatalogGroup {
   models: readonly CatalogModel[]
 }
 
-interface ModelCatalogResponse {
+/** Host Remote 模型目录的结构收窄（字段名与 0.2 的 ModelCatalog 对齐） */
+interface ModelCatalogFace {
   groups: CatalogGroup[]
   failures: readonly { id: string }[]
 }
 
-/** connection 服务的 llm 面结构收窄（唯一边界） */
-interface ConnectionLlApi {
-  llm: {
-    models: (payload: Record<string, never>, signal?: AbortSignal) => Promise<
-      | { result: { ok: true, value: ModelCatalogResponse } }
-      | { result: { ok: false } }
-    >
+/** 0.2 远程调用的统一信封：失败项自带 code/message */
+type RemoteResult<T> =
+  | { ok: true, value: T }
+  | { ok: false, error: { code: string, message: string } }
+
+/**
+ * 读本部署当前可路由的全部模型（provider 分组 + 各 provider 的失败项）。
+ *
+ * 0.2 把 0.1.x 的 `ctx.connection.api.llm.models` 换成了 Host Remote：
+ * `ctx.remote.session.modelCatalog()`，与官方 composer 的模型选择器同源
+ * （dsh-client-ui-model-selection 的 ModelCatalogDirectory 也走这一支）。
+ * 走 `ctx.get('remote')` 探测：Remote 命名空间在 0.2 里是 inject 令牌
+ * （`remote.session`），这里只做结构判断，缺什么就报什么。
+ *
+ * @param ctx - 客户端上下文。
+ * @returns 目录，或结构化失败（调用方据此显示目录加载失败 + 重试）。
+ */
+async function readModelCatalog(ctx: ClientContext): Promise<RemoteResult<ModelCatalogFace>> {
+  const remote = ctx.get('remote') as unknown as
+    | { session?: { modelCatalog?: () => Promise<RemoteResult<ModelCatalogFace>> } }
+    | undefined
+  const session = remote?.session
+  if (session === undefined || session === null || typeof session.modelCatalog !== 'function') {
+    return { ok: false, error: { code: 'remote-unavailable', message: 'ctx.remote.session.modelCatalog 不可用（Host Remote 未挂载该命名空间）' } }
   }
+  return await session.modelCatalog()
 }
 
 /** 一条精确的 provider/model 路由 + 档位 */
@@ -367,18 +387,22 @@ export class AdvisorCardController {
     this.catalogPartial = false
     this.publish()
     try {
-      const connection = this.ctx.get('connection') as unknown as { api: ConnectionLlApi }
-      const response = await connection.api.llm.models({})
+      // 0.2：模型目录走 Host Remote（ctx.remote.session.modelCatalog），
+      // 与官方 composer 的模型选择器同源同形——provider 分组 + 每个 provider
+      // 的失败项。0.1.x 的 connection.api.llm.models 在 0.2 已不存在。
+      const response = await readModelCatalog(this.ctx)
       if (generation !== this.catalogGeneration) return
-      if (response.result.ok) {
-        this.catalogGroups = response.result.value.groups
-        this.catalogPartial = response.result.value.failures.length > 0
+      if (response.ok) {
+        this.catalogGroups = response.value.groups
+        this.catalogPartial = response.value.failures.length > 0
         this.catalogStatus = 'ready'
       } else {
+        console.warn(`[dsh-advisor] 模型目录读取失败：${response.error.code}: ${response.error.message}`)
         this.catalogStatus = 'error'
       }
-    } catch {
+    } catch (error) {
       if (generation !== this.catalogGeneration) return
+      console.warn('[dsh-advisor] 模型目录读取异常：', error)
       this.catalogStatus = 'error'
     }
     this.publish()

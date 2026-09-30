@@ -173,13 +173,40 @@ to touch anyway. Both are real drift, not type noise:
   injected patrol correction now declares `kind: 'advisor-patrol'` with
   `form: 'notice'` and a `boundContextSummary`-bounded summary.
 
+## Fix 6 — the model catalog moved to a Host Remote (the card showed "Failed to load the model catalog")
+
+The card's model list came from `ctx.connection.api.llm.models({})`, whose
+`{ result: { ok, value } }` envelope wrapped `{ groups, failures }`. That call
+does not exist on 0.2: the whole `connection.api.*` surface was replaced by
+typed Host Remotes, and the catalog now lives on `ctx.remote.session`:
+
+```ts
+const response = await ctx.remote.session.modelCatalog()
+// RemoteResult<ModelCatalog>, ok is at the TOP level:
+//   { ok: true,  value: { default, routableProviders, groups, failures } }
+//   { ok: false, error: { code, message } }
+```
+
+`groups` is `[{ id, name, models: [{ id, name, description?, reasoning? }] }]`
+and `reasoning` is `{ efforts: [{ id, name, description? }], defaultEffort? }` —
+the same provider-grouped shape the card already consumed, so only the call and
+the envelope changed. This is the same source the composer's model selector
+reads (`dsh-client-ui-model-selection`'s `ModelCatalogDirectory` calls
+`ctx.remote.session.modelCatalog()`), so the card now offers exactly the routes
+DSH considers routable.
+
+`remote` and `remote.session` are named in the client `inject` list: in 0.2 a
+Remote namespace is an inject token, and several installed plugins declare
+`remote.session` the same way. A missing catalog is now surfaced with its
+`code: message` in the console instead of a bare failure.
+
 ## Verification
 
 ```bash
 bash scripts/link-deps.sh   # after any npm install; resolves the dsh path dynamically
 npm run build               # tsc (host) + esbuild (client bundle)
 npx vitest run              # 53 upstream tests
-node test/compat-0.2.cjs    # 12 fork assertions: inject, slots, module id,
+node test/compat-0.2.cjs    # 14 fork assertions: inject, remote catalog, slots, module id,
                             # source kind, dead files, scope, form projection
 ```
 

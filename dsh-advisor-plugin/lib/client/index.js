@@ -379,6 +379,14 @@ function createSnapshotStore(initial) {
 }
 
 // src/client/controller.ts
+async function readModelCatalog(ctx) {
+  const remote = ctx.get("remote");
+  const session = remote?.session;
+  if (session === void 0 || session === null || typeof session.modelCatalog !== "function") {
+    return { ok: false, error: { code: "remote-unavailable", message: "ctx.remote.session.modelCatalog \u4E0D\u53EF\u7528\uFF08Host Remote \u672A\u6302\u8F7D\u8BE5\u547D\u540D\u7A7A\u95F4\uFF09" } };
+  }
+  return await session.modelCatalog();
+}
 function routeKey(provider, model) {
   return `${provider}\0${model}`;
 }
@@ -593,18 +601,19 @@ var AdvisorCardController = class {
     this.catalogPartial = false;
     this.publish();
     try {
-      const connection = this.ctx.get("connection");
-      const response = await connection.api.llm.models({});
+      const response = await readModelCatalog(this.ctx);
       if (generation !== this.catalogGeneration) return;
-      if (response.result.ok) {
-        this.catalogGroups = response.result.value.groups;
-        this.catalogPartial = response.result.value.failures.length > 0;
+      if (response.ok) {
+        this.catalogGroups = response.value.groups;
+        this.catalogPartial = response.value.failures.length > 0;
         this.catalogStatus = "ready";
       } else {
+        console.warn(`[dsh-advisor] \u6A21\u578B\u76EE\u5F55\u8BFB\u53D6\u5931\u8D25\uFF1A${response.error.code}: ${response.error.message}`);
         this.catalogStatus = "error";
       }
-    } catch {
+    } catch (error) {
       if (generation !== this.catalogGeneration) return;
+      console.warn("[dsh-advisor] \u6A21\u578B\u76EE\u5F55\u8BFB\u53D6\u5F02\u5E38\uFF1A", error);
       this.catalogStatus = "error";
     }
     this.publish();
@@ -847,7 +856,7 @@ var en = {
 };
 
 // src/client/index.ts
-var inject = ["slots", "locale", "connection"];
+var inject = ["slots", "locale", "connection", "remote", "remote.session"];
 var NS = "dsh-advisor.card";
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-advisor: card dictionaries");
