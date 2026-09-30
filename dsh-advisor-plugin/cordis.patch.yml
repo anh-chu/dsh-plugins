@@ -1,0 +1,5 @@
+# dsh-advisor-plugin 挂载补丁（bundle patch 形态）。
+# id 是 loader 行标识，name 必须与 npm 包名一致。
+- insert:
+    - id: dsh-advisor-plugin
+      name: dsh-advisor-plugin

@@ -1,0 +1,70 @@
+flowchart TB
+  classDef host fill:#eef2ff,stroke:#4f46e5,color:#1e1b4b
+  classDef client fill:#fff7ed,stroke:#ea580c,color:#7c2d12
+  classDef dsh fill:#ecfeff,stroke:#0891b2,color:#164e63
+  classDef model fill:#f5f3ff,stroke:#7c3aed,color:#3b0764
+  classDef guard fill:#fef2f2,stroke:#dc2626,color:#7f1d1d
+
+  subgraph Host["host 半 · Node / Cordis 插件"]
+    Index["index.ts<br/>装配与武装总闸"]:::host
+    Config["config.ts<br/>选择解析 / 黑名单"]:::host
+    History["history.ts<br/>工具清单 + deriveMessages"]:::host
+    LLM["llm-call.ts<br/>审查调用 / 降级 / 调查"]:::host
+    Patrol["patrol.ts<br/>巡逻调度 / 请求边界注入"]:::host
+    Guard["emission-guard.ts<br/>防噪 / 去重 / 冷却"]:::guard
+    Events["patrol-event.ts<br/>会话事件"]:::host
+    Settings["settings.ts<br/>设置命名空间"]:::host
+    Gating["gating.ts<br/>按 agent 隐藏工具"]:::host
+    Command["command.ts<br/>/advisor 命令"]:::host
+    Prompt["prompt-section.ts<br/>升级守则提示段"]:::host
+  end
+
+  subgraph DSH["DSH 宿主能力"]
+    LlmSvc["ctx.llm.stream<br/>provider / 凭据复用"]:::dsh
+    SettingsSvc["settings 服务<br/>实时配置"]:::dsh
+    ToolsSvc["tools 服务<br/>register / restrict"]:::dsh
+    SessionSvc["Session 追加式日志"]:::dsh
+    Inject["agent.inject()<br/>下一请求尾部注入"]:::dsh
+  end
+
+  subgraph Client["client 半 · React / Web UI"]
+    Card["AdvisorCard<br/>设置卡片"]:::client
+    ToolRow["AdvisorToolRow<br/>咨询卡片"]:::client
+    PatrolView["PatrolNodeView<br/>巡逻卡片"]:::client
+    Controller["controller.ts<br/>暂存编辑 + 模型目录"]:::client
+    ChatDef["patrol-chat.ts<br/>事件到聊天节点"]:::client
+  end
+
+  Executor["执行模型<br/>快 / 便宜"]:::model
+  Reviewer["审查模型<br/>强 / 按需"]:::model
+
+  Executor -->|"advisor() 零参调用"| Index
+  Index --> History
+  History --> LLM
+  LLM --> LlmSvc
+  LlmSvc --> Reviewer
+  Reviewer -->|"plan / correction / stop"| LLM
+  LLM -->|"工具结果：建议全文"| Executor
+
+  Patrol --> History
+  Patrol --> LLM
+  Patrol --> Guard
+  Patrol -->|"CORRECTION / STOP"| Inject
+  Inject --> Executor
+  Patrol --> Events
+  Events --> SessionSvc
+  SessionSvc --> ChatDef
+  ChatDef --> PatrolView
+  LLM --> ToolRow
+
+  Config --> Index
+  Config --> Gating
+  Gating --> ToolsSvc
+  ToolsSvc --> Executor
+
+  Settings --> SettingsSvc
+  SettingsSvc --> Controller
+  Controller --> Card
+  Command --> Index
+  Prompt --> Index
+  Index --> ToolsSvc
