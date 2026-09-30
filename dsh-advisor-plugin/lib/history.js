@@ -4,18 +4,15 @@
  * 结构（对齐 rpiv-advisor）：
  *   [工具清单合成消息] + [session.deriveMessages() 的模型可见面]
  *
- * 两个工程要点：
- *   1. deriveMessages() 是 compaction 感知的——压缩摘要按模型实际看到的
- *      面貌转发，而不是重放压缩前的原始历史；
- *   2. 工具清单做"按名排序 + 键排序稳定序列化"——多次 advisor 调用间
- *      字节级一致，命中 DeepSeek 上下文缓存（缓存是整段转发模式的省钱杠杆）。
- *
- * 尾部两条规则原样移植 rpiv：剥掉 in-flight 的 advisor() 调用（孤儿
- * toolCall 会被 provider 拒绝）；保证 user 结尾（部分 provider 拒绝
- * assistant 结尾）。
+ * deriveMessages() 是 compaction 感知的——按执行模型实际看到的样貌转发，
+ * 而不是重放压缩前的原始历史；工具清单按名排序、键排序稳定序列化，
+ * 让多次 advisor 调用字节级一致。
+ * 转发前剔除未配对的 tool call/result，并清理 tool-call id，作为
+ * Anthropic 兼容审查路由适配器修复之外的纵深防御。
+ * 保留 user 结尾规则（部分 provider 拒绝 assistant 结尾）。
  */
-import { createUserMessage } from '@deepseek-ai/dsh-llm';
-import { ADVISOR_TOOL_NAME, MSG_USER_TAIL_NUDGE } from './advisor-prompt.js';
+import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm';
+import { MSG_USER_TAIL_NUDGE } from './advisor-prompt.js';
 // 递归键排序序列化：键序与 V8 插入序无关，同一清单字节级一致
 function stableStringify(value) {
     if (value === null || typeof value !== 'object')
@@ -54,20 +51,85 @@ function getInventoryMessage(ctx, cache, scope) {
     cache.message = message;
     return message;
 }
-// 剥掉尾部 assistant 消息里 in-flight 的 advisor() toolCall——正是触发本次
-// 咨询的那个调用，还没有配对结果，转发它只会让 provider 拒绝载荷
-function stripInflightAdvisorCall(messages) {
-    if (messages.length === 0)
-        return messages;
-    const last = messages[messages.length - 1];
-    if (last === undefined || last.role !== 'assistant')
-        return messages;
-    const filtered = last.content.filter(block => !(block.type === 'tool-call' && block.name === ADVISOR_TOOL_NAME));
-    if (filtered.length === last.content.length)
-        return messages;
-    if (filtered.length === 0)
-        return messages.slice(0, -1);
-    return [...messages.slice(0, -1), { ...last, content: filtered }];
+const LEGAL_TOOL_CALL_ID = /^[A-Za-z0-9_-]+$/;
+function sanitizeToolCallIds(messages) {
+    const ids = new Map();
+    const used = new Set();
+    const originals = [];
+    const add = (id) => {
+        if (ids.has(id))
+            return;
+        const base = id.replace(/[^A-Za-z0-9_-]/g, '_') || 'call';
+        let sanitized = base;
+        for (let suffix = 2; used.has(sanitized); suffix += 1)
+            sanitized = `${base}_${suffix}`;
+        ids.set(id, sanitized);
+        used.add(sanitized);
+    };
+    for (const message of messages) {
+        if (message.role === 'assistant') {
+            for (const block of message.content)
+                if (block.type === 'tool-call')
+                    originals.push(block.id);
+        }
+        else if (message.role === 'tool') {
+            originals.push(message.toolCallId, message.source.callId);
+        }
+    }
+    // Reserve legal IDs first so sanitizing an illegal ID never renames a valid one.
+    for (const id of originals) {
+        if (LEGAL_TOOL_CALL_ID.test(id)) {
+            ids.set(id, id);
+            used.add(id);
+        }
+    }
+    for (const id of originals)
+        add(id);
+    return ids;
+}
+/** Remove tool calls without results and results whose calls were not forwarded. */
+export function repairToolPairs(messages) {
+    const results = new Set(messages.filter((message) => message.role === 'tool').map((message) => message.toolCallId));
+    const ids = sanitizeToolCallIds(messages);
+    const keptCalls = new Set();
+    const repaired = [];
+    for (const message of messages) {
+        if (message.role === 'assistant') {
+            const hadToolCalls = message.content.some(block => block.type === 'tool-call');
+            const content = message.content.flatMap((block) => {
+                if (block.type !== 'tool-call')
+                    return [block];
+                if (!results.has(block.id))
+                    return [];
+                keptCalls.add(block.id);
+                const id = ids.get(block.id) ?? block.id;
+                return [id === block.id ? block : { ...block, id: ToolCallId(id) }];
+            });
+            if (hadToolCalls && !content.some(block => block.type !== 'reasoning'))
+                continue;
+            const unchanged = content.length === message.content.length && content.every((block, i) => block === message.content[i]);
+            repaired.push(unchanged
+                ? message
+                : { ...message, content, source: { kind: 'model', provider: message.source.provider, model: message.source.model } });
+            continue;
+        }
+        if (message.role === 'tool') {
+            if (!results.has(message.toolCallId) || !keptCalls.has(message.toolCallId))
+                continue;
+            const toolCallId = ids.get(message.toolCallId) ?? message.toolCallId;
+            const sourceCallId = ids.get(message.source.callId) ?? message.source.callId;
+            repaired.push(toolCallId === message.toolCallId && sourceCallId === message.source.callId
+                ? message
+                : {
+                    ...message,
+                    toolCallId: ToolCallId(toolCallId),
+                    source: { ...message.source, callId: ToolCallId(sourceCallId) },
+                });
+            continue;
+        }
+        repaired.push(message);
+    }
+    return repaired;
 }
 // 保证 user 结尾：剥除后尾部可能是 assistant（executor 在调用前输出了思考）
 function ensureUserTail(messages) {
@@ -83,7 +145,7 @@ export function createHistoryBuilder(ctx) {
     // 是 per-agent 的，作用域不同清单也不同，不能共用同一份缓存
     const caches = new WeakMap();
     return function buildAdvisorMessages(agent) {
-        const branch = ensureUserTail(stripInflightAdvisorCall(agent.session.deriveMessages()));
+        const branch = ensureUserTail(repairToolPairs(agent.session.deriveMessages()));
         let cache = caches.get(agent);
         if (cache === undefined) {
             cache = {};
