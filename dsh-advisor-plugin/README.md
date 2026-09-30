@@ -18,7 +18,7 @@
 > dsh plugin --profile web add file:/home/sil/dsh-plugins/dsh-advisor-plugin
 > ```
 >
-> 细节与验证见 [COMPAT-0.2.0.md](./COMPAT-0.2.0.md)（`node test/compat-0.2.cjs`，11 条断言）。
+> 细节与验证见 [COMPAT-0.2.0.md](./COMPAT-0.2.0.md)（`node test/compat-0.2.cjs`，18 条断言）。
 
 `dsh-advisor-plugin` 解决的是一个结构性问题：**同一个模型既写代码又验代码，很容易“证明自己是对的”**。长链路 Coding Agent 常见的三类失效——自验证盲区、长程漂移、过早宣告完成——都可以用“独立第二意见”来缓解。
 
