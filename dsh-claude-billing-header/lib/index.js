@@ -78,10 +78,26 @@ const VERSION_FALLBACK = "2.1.263";
 const MESSAGES_PATH = "api.anthropic.com/v1/messages";
 
 /**
- * The one fetch patch this module has installed, or null. Module scope, not
- * per-apply: a plugin reload must find and unwind the previous layer.
+ * Marks a fetch function this plugin installed, pointing at the fetch it
+ * replaced. A global symbol, not a module variable: a profile reload gives
+ * the plugin a fresh module instance, so module state cannot be how a new
+ * install finds the layer the old one left behind. Tagging the function
+ * itself survives that.
  */
-let activeFetchPatch = null;
+export const FETCH_PATCH_TAG = Symbol.for("dsh-claude-billing-header.fetch-patch");
+
+/**
+ * Walk down through this plugin's own patch layers to the fetch underneath,
+ * so installing again replaces them instead of nesting on top. Only our own
+ * layers are stripped; another plugin's patch above ours is left alone.
+ */
+export function stripOwnPatchLayers(fetchImpl) {
+  let current = fetchImpl;
+  while (typeof current === "function" && current[FETCH_PATCH_TAG] !== undefined) {
+    current = current[FETCH_PATCH_TAG];
+  }
+  return current;
+}
 
 export function resolveConfig(config = {}) {
   const entrypoint =
@@ -433,7 +449,7 @@ function hostPath(url) {
 
 export function patchFetch(original, resolved, onEvent) {
   const emit = typeof onEvent === "function" ? onEvent : undefined;
-  return function patchedFetch(input, init) {
+  const patchedFetch = function patchedFetch(input, init) {
     const url = typeof input === "string" ? input : input?.url;
     // Observe only Anthropic traffic; everything else passes silently.
     const watched = typeof url === "string" && url.includes("anthropic");
@@ -527,6 +543,10 @@ export function patchFetch(original, resolved, onEvent) {
     if (!mutated) return original.apply(this, arguments);
     return original.call(this, input, { ...init, body: JSON.stringify(working) });
   };
+  // Tag the install so a later apply can find and replace it — including from
+  // a fresh module instance, where module state would be empty.
+  Object.defineProperty(patchedFetch, FETCH_PATCH_TAG, { value: original });
+  return patchedFetch;
 }
 
 export function apply(ctx, config) {
@@ -553,21 +573,16 @@ export function apply(ctx, config) {
         }
       : undefined;
   ctx.effect(() => {
-    // A profile config reload re-applies this plugin, and the new instance
-    // would otherwise capture the *previous* patch as its "original" and nest
-    // a second layer on top. Unwind any earlier install first so a reload
-    // replaces the patch instead of stacking one. Stacking double-prefixed
-    // every tool name, which the response side could not map back.
-    if (activeFetchPatch !== null) {
-      if (globalThis.fetch === activeFetchPatch.patched) {
-        globalThis.fetch = activeFetchPatch.original;
-      }
-      activeFetchPatch = null;
-    }
-    const originalFetch = globalThis.fetch;
+    // A profile config reload re-applies this plugin as a fresh module
+    // instance, so the new install cannot rely on module state to find the
+    // layer the old one left behind: it walks the tag chain on the function
+    // itself. Without that it captured the previous patch as its "original"
+    // and nested on top, and the old disposer could not restore because
+    // globalThis.fetch no longer equalled its own patch. The extra layer is
+    // harmless while the rewrite stays idempotent, but it is still waste.
+    const originalFetch = stripOwnPatchLayers(globalThis.fetch);
     const patched = patchFetch(originalFetch, resolved, sink);
     globalThis.fetch = patched;
-    activeFetchPatch = { patched, original: originalFetch };
     ctx.logger.info(
       "[claude-billing-header] active (entrypoint=%s)",
       resolveEntrypoint(resolved.entrypoint),
@@ -575,9 +590,7 @@ export function apply(ctx, config) {
     return () => {
       // A newer instance may have replaced this one already; only the current
       // install may restore, or the restore would clobber its successor.
-      if (activeFetchPatch === null || activeFetchPatch.patched !== patched) return;
       if (globalThis.fetch === patched) globalThis.fetch = originalFetch;
-      activeFetchPatch = null;
     };
   }, "claude-billing-header.fetch-patch");
 

@@ -6,6 +6,7 @@ import {
   dropToolsFromBody,
   ensureBillingHeader,
   firstUserText,
+  FETCH_PATCH_TAG,
   fromWireToolName,
   isOAuthMessagesRequest,
   messageText,
@@ -13,11 +14,23 @@ import {
   patchFetch,
   renameBodyTools,
   resolveConfig,
+  stripOwnPatchLayers,
   toWireToolName,
   unwireChunkToolName,
 } from "../lib/index.js";
 
 const PREFIX = "mcp__dsh__";
+
+/** How many of this plugin's fetch patches are chained right now. */
+function countOurLayers() {
+  let layers = 0;
+  let current = globalThis.fetch;
+  while (typeof current === "function" && current[FETCH_PATCH_TAG] !== undefined) {
+    layers += 1;
+    current = current[FETCH_PATCH_TAG];
+  }
+  return layers;
+}
 // The tool names a real DSH agent turn carried when this was measured.
 const ALL_TOOL_NAMES = [
   "advanced_search", "ask_user_question", "bash", "cordis_inspect_list",
@@ -440,6 +453,7 @@ const ALL_TOOL_NAMES = [
     });
     apply(mkctx(), {});
     apply(mkctx(), {}); // the reload
+    assert.equal(countOurLayers(), 1, "the reload stacked a second patch");
     await globalThis.fetch("https://api.anthropic.com/v1/messages?beta=true", {
       method: "POST",
       headers: { authorization: "Bearer sk-ant-oat01-x" },
@@ -458,4 +472,34 @@ const ALL_TOOL_NAMES = [
   assert.deepEqual(sent.tools.map((t) => t.name), ["mcp__dsh__memory_get", "Bash"]);
 }
 
-console.log("dsh-claude-billing-header: 20 tests passed");
+// 21. A reload gives the plugin a FRESH module instance, so the unwind cannot
+// rely on module state: the new install must find the old layer through the
+// tag on the function itself. Simulated by leaving a tagged layer installed,
+// which is exactly the shape the previous module instance left behind.
+{
+  const realFetch = globalThis.fetch;
+  const base = async () => new Response("{}", { status: 200 });
+  globalThis.fetch = patchFetch(base, resolveConfig({}), undefined);
+  try {
+    assert.equal(countOurLayers(), 1, "the simulated stale layer was not installed");
+    apply(
+      {
+        logger: { info() {}, warn() {} },
+        effect(fn) {
+          fn();
+          return () => {};
+        },
+        on() {
+          return () => {};
+        },
+      },
+      {},
+    );
+    assert.equal(countOurLayers(), 1, "the stale layer was not unwound");
+    assert.equal(stripOwnPatchLayers(globalThis.fetch), base, "did not land back on the base fetch");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+console.log("dsh-claude-billing-header: 21 tests passed");
