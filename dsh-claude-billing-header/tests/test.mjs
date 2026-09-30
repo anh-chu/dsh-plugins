@@ -252,6 +252,8 @@ const ALL_TOOL_NAMES = [
   assert.equal(toWireToolName("web_fetch", PREFIX), "WebFetch");
   assert.equal(toWireToolName("memory_get", PREFIX), "mcp__dsh__memory_get");
   assert.equal(toWireToolName("mcp_describe_tool", PREFIX), "mcp__dsh__mcp_describe_tool");
+  // Idempotent: a second pass must not re-prefix.
+  assert.equal(toWireToolName("mcp__dsh__memory_get", PREFIX), "mcp__dsh__memory_get");
 }
 
 // 15. Every name round-trips, and no wire name escapes the two allowed shapes.
@@ -413,4 +415,47 @@ const ALL_TOOL_NAMES = [
   assert.equal(otherOut[1], chunks[1]);
 }
 
-console.log("dsh-claude-billing-header: 19 tests passed");
+// 20. Re-applying the plugin must REPLACE the fetch patch, not stack a second
+// one. A profile config reload does exactly this, and the stacked patch
+// double-prefixed every name (`mcp__dsh__mcp__dsh__memory_get`), which the
+// response side could not map back — DSH then saw an unknown tool.
+{
+  const bodies = [];
+  const realFetch = globalThis.fetch;
+  const fakeFetch = async (input, init) => {
+    bodies.push(init?.body);
+    return new Response("{}", { status: 200 });
+  };
+  globalThis.fetch = fakeFetch;
+  try {
+    const mkctx = () => ({
+      logger: { info() {}, warn() {} },
+      effect(fn) {
+        fn();
+        return () => {};
+      },
+      on() {
+        return () => {};
+      },
+    });
+    apply(mkctx(), {});
+    apply(mkctx(), {}); // the reload
+    await globalThis.fetch("https://api.anthropic.com/v1/messages?beta=true", {
+      method: "POST",
+      headers: { authorization: "Bearer sk-ant-oat01-x" },
+      body: JSON.stringify({
+        model: "m",
+        system: [{ type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+        messages: [{ role: "user", content: "hi there" }],
+        tools: [{ name: "memory_get" }, { name: "bash" }],
+      }),
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(bodies.length, 1, "the patch ran more than once per request");
+  const sent = JSON.parse(bodies[0]);
+  assert.deepEqual(sent.tools.map((t) => t.name), ["mcp__dsh__memory_get", "Bash"]);
+}
+
+console.log("dsh-claude-billing-header: 20 tests passed");

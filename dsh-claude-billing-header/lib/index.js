@@ -77,6 +77,12 @@ export const BILLING_SALT = "59cf53e54c78";
 const VERSION_FALLBACK = "2.1.263";
 const MESSAGES_PATH = "api.anthropic.com/v1/messages";
 
+/**
+ * The one fetch patch this module has installed, or null. Module scope, not
+ * per-apply: a plugin reload must find and unwind the previous layer.
+ */
+let activeFetchPatch = null;
+
 export function resolveConfig(config = {}) {
   const entrypoint =
     typeof config.entrypoint === "string" && config.entrypoint.length > 0
@@ -310,6 +316,10 @@ export function nameKey(value) {
 /** Real harness tool name -> the name Anthropic will accept on the wire. */
 export function toWireToolName(name, prefix) {
   const raw = String(name);
+  // Idempotent: a body that was already rewritten must survive a second pass
+  // unchanged. Without this, a second pass turns `<prefix>x` into
+  // `<prefix><prefix>x`, which the response side cannot map back.
+  if (raw.startsWith(prefix)) return raw;
   return CLAUDE_CODE_BY_LOWER.get(nameKey(raw)) ?? `${prefix}${raw}`;
 }
 
@@ -496,8 +506,8 @@ export function patchFetch(original, resolved, onEvent) {
           ? String(isObject(parsed.system[0]) ? (parsed.system[0].text ?? "[non-text]") : parsed.system[0]).slice(0, 80)
           : "[no-system]";
       emit({
-        outcome: next === null && dt === null ? "passthrough" : "injected",
-        reason: !mutated ? "header-present-or-no-system" : undefined,
+        outcome: mutated ? "injected" : "passthrough",
+        reason: mutated ? undefined : "header-present-or-no-system",
         url: hostPath(url),
         model: isObject(parsed) && typeof parsed.model === "string" ? parsed.model : undefined,
         version,
@@ -521,8 +531,7 @@ export function patchFetch(original, resolved, onEvent) {
 
 export function apply(ctx, config) {
   const resolved = resolveConfig(config);
-  const originalFetch = globalThis.fetch;
-  if (typeof originalFetch !== "function") {
+  if (typeof globalThis.fetch !== "function") {
     ctx.logger.warn(
       "[claude-billing-header] globalThis.fetch is unavailable; cannot inject billing header",
     );
@@ -543,16 +552,32 @@ export function apply(ctx, config) {
           }
         }
       : undefined;
-  const patched = patchFetch(originalFetch, resolved, sink);
-
   ctx.effect(() => {
+    // A profile config reload re-applies this plugin, and the new instance
+    // would otherwise capture the *previous* patch as its "original" and nest
+    // a second layer on top. Unwind any earlier install first so a reload
+    // replaces the patch instead of stacking one. Stacking double-prefixed
+    // every tool name, which the response side could not map back.
+    if (activeFetchPatch !== null) {
+      if (globalThis.fetch === activeFetchPatch.patched) {
+        globalThis.fetch = activeFetchPatch.original;
+      }
+      activeFetchPatch = null;
+    }
+    const originalFetch = globalThis.fetch;
+    const patched = patchFetch(originalFetch, resolved, sink);
     globalThis.fetch = patched;
+    activeFetchPatch = { patched, original: originalFetch };
     ctx.logger.info(
       "[claude-billing-header] active (entrypoint=%s)",
       resolveEntrypoint(resolved.entrypoint),
     );
     return () => {
+      // A newer instance may have replaced this one already; only the current
+      // install may restore, or the restore would clobber its successor.
+      if (activeFetchPatch === null || activeFetchPatch.patched !== patched) return;
       if (globalThis.fetch === patched) globalThis.fetch = originalFetch;
+      activeFetchPatch = null;
     };
   }, "claude-billing-header.fetch-patch");
 
