@@ -69,6 +69,24 @@ in 0.21.1): `/sidebar/file` rejected workspace-relative paths with
 realpath + `isWithin` fence still blocks escapes (403). See the folder README
 for install. Already applied to the live web profile.
 
+## Skills
+
+Global agent skills that belong with the plugins they explain. DSH loads them from
+`~/.dsh/skills/`, so link the repo copy in and keep this repo the single source of truth:
+
+```sh
+ln -s /home/sil/dsh-plugins/skills/dsh-plugin-compat ~/.dsh/skills/dsh-plugin-compat
+```
+
+### `skills/dsh-plugin-compat`
+Triage skill for a DSH plugin that fails to load or activate: `<package>: failed` on the boot
+card, `web boot: N entry did not activate`, a blank or stuck boot screen, a plugin that broke
+after a DSH upgrade, or a third-party plugin that needs patching/vendoring. It carries the
+causes worth checking first (an undeclared `inject` service, service/API drift, bundle-snapshot
+timing), the throwaway-profile + CDP-browser method for capturing the error the frontend never
+prints, and `scripts/compat-probe.mjs`, the probe that does it. Written from the 0.1.7
+`dsh-plugin-message-edit` debug — see that folder's `COMPAT-0.1.7.md` for the worked example.
+
 ## MCP servers
 
 These plugins configure 2 MCP clients (both via `@deepseek-ai/dsh-mcp-client`):
