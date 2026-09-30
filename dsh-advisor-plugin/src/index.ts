@@ -23,10 +23,11 @@ import type {} from '@deepseek-ai/dsh-tools'
 import { Config as ConfigSchema, resolveConfig, resolveSelection, type Config, type Selection } from './config.js'
 import { registerAdvisorCommand } from './command.js'
 import { registerGating } from './gating.js'
+import { ADVISOR_TOOL_NAME } from './advisor-prompt.js'
 import { createHistoryBuilder } from './history.js'
 import { registerPatrol } from './patrol.js'
 import { registerAdvisorSection } from './prompt-section.js'
-import { createAdvisorTool } from './tool.js'
+import { createAdvisorTool, type AdvisorValue } from './tool.js'
 import { wireSettings } from './settings.js'
 
 export const name = 'dsh-advisor'
@@ -86,6 +87,14 @@ export function apply(ctx: Context, config: Config) {
     console.log(`[dsh-advisor] 设置已变更：${state.selection === undefined
       ? '未武装（provider/model 不完整或总开关关闭）——advisor 工具不注册'
       : `已武装 ${state.selection.provider}/${state.selection.model}${state.selection.effort === undefined ? '' : ` (${state.selection.effort})`}`}`)
+  })
+
+  // 审查失败保持原文，但标记为工具错误（block 设置 isError，不加 "Error: " 前缀）
+  ctx.on('tools/post-execute', async (exec, result, next) => {
+    const decision = await next()
+    if (exec.name !== ADVISOR_TOOL_NAME || result.isError || decision.kind !== 'accept') return decision
+    if ((result.value as unknown as AdvisorValue | null)?.ok !== false) return decision
+    return { kind: 'block', feedback: decision.content ?? result.content }
   })
 
   // /advisor 命令：commands 服务就绪后注册（fiber 卸载自动清理）

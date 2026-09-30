@@ -247,6 +247,12 @@ const run = async () => {
     assert.ok(hostEntry.includes('resolveConfig'), 'host 半未使用 resolveConfig（会读到 volatile 引用而非值）')
   })
 
+  check('reviewer failures are blocked as tool errors without changing feedback', () => {
+    const hostEntry = read('lib/index.js')
+    assert.ok(hostEntry.includes('tools/post-execute'), 'host 半没有 post-execute listener')
+    assert.ok(hostEntry.includes('kind: \'block\''), 'reviewer failures are not marked as tool errors')
+  })
+
   console.log(`\n${passed} 条断言通过${process.exitCode === 1 ? '，存在失败项' : ''}`)
 }
 

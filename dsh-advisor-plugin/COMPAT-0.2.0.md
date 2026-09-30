@@ -235,13 +235,33 @@ page refresh picks up changes — but the **host half is loaded into the node pr
 boot**, so host-side changes need a `dsh web` restart. The live Config projection tells
 you which one you have: a volatile node carries `x-cordis.volatile: true`.
 
+## Fix 8 — repair forwarded tool history and mark reviewer failures as errors
+
+The advisor forwards the model-visible conversation to a different provider. Before
+forwarding, it now removes tool calls without matching results and results whose
+calls are absent; it also drops assistant messages left with reasoning alone. This
+prevents an invalid partial tool exchange from reaching the reviewer adapter.
+
+Tool-call IDs must match Anthropic's `[A-Za-z0-9_-]+` constraint. The history
+sanitizer maps illegal IDs deterministically, reserving legal IDs first so existing
+legal IDs are never renamed. It applies the same mapping to the assistant call ID,
+`toolCallId`, and `source.callId`. When repair changes an assistant message, it also
+drops `source.replayState`, so provider-native replay cannot restore the original
+calls or IDs instead of the repaired content.
+
+Failed reviewer calls still return their original readable feedback. A root-level
+`tools/post-execute` listener returns `{ kind: 'block', feedback }`, which makes the
+tool result an error without adding an `Error: ` prefix or changing the displayed
+text. This history sanitizer is defense-in-depth alongside the adapter-level
+`dsh-plugin-subscriptions` v0.9.6 `toAnthropicMessages` fix.
+
 ## Verification
 
 ```bash
 bash scripts/link-deps.sh   # after any npm install; resolves the dsh path dynamically
 npm run build               # tsc (host) + esbuild (client bundle)
 npx vitest run              # 53 upstream tests
-node test/compat-0.2.cjs    # 17 fork assertions: inject, remote catalog, slots, module id,
+node test/compat-0.2.cjs    # 18 fork assertions: inject, remote catalog, slots, module id,
                             # source kind, dead files, scope, form projection
 ```
 
