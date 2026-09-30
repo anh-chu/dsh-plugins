@@ -249,7 +249,7 @@ function apply(ctx, config = {}) {
 	}));
 	ctx.tools.register(defineTool({
 		name: "session_send",
-		description: "Send a message to another DeepSeek Harness session in this host. A persisted offline session is resumed before delivery. The target may be a session id or its human-readable title; mode controls how the target is interpreted.",
+		description: "Send a message to another DeepSeek Harness session in this host. Not for communication between a parent session and its subagents, in either direction; use send_message for that. A persisted offline session is resumed before delivery. The target may be a session id or its human-readable title; mode controls how the target is interpreted.",
 		parameters: {
 			to: {
 				type: "string",
