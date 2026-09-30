@@ -29,18 +29,49 @@ export interface Config {
   investigate?: boolean
 }
 
-export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true).description('advisor 总开关：关闭后不注册 advisor 工具与升级守则提示段，已保存的模型配置保留'),
-  provider: z.string().default('').description('审查模型所在的 provider 路由名（ctx.llm 适配器路由，如 example-provider）'),
-  model: z.string().default('').description('该路由下的审查模型 id（如 deepseek-v4-pro）'),
-  effort: z.string().default('').description('审查模型推理档位；留空走模型默认'),
-  disabledForModels: z.array(z.string()).default([]).description('执行模型黑名单："model" / "provider/model" / "provider/model@minEffort"'),
-  guidelines: z.array(z.string()).default([]).description('覆盖默认的升级守则（系统提示段文本，每条一行）'),
-  patrolEnabled: z.boolean().default(true).description('巡逻模式：执行中每 N 步自动把会话快照发给审查模型检查是否跑偏，跑偏时注入纠偏'),
-  patrolEverySteps: z.number().default(6).min(2).max(500).description('巡逻间隔（模型请求步数）；每次巡逻整段会话计费一次审查模型。当保底用可以配大（如 100）'),
-  patrolImmuneTurns: z.number().default(3).min(0).max(20).description('纠偏冷却：一次纠偏注入后的 N 个请求内，新的 CORRECTION 降级为只记日志不注入（STOP 不受冷却限制）'),
-  investigate: z.boolean().default(true).description('审查者调查工具：允许审查模型在裁决前用只读工具（工作区内搜索/读文件）亲自核实，建议更有据'),
+/**
+ * 配置 schema。
+ *
+ * 每个可编辑字段都标 `.volatile()`：0.2 的设置文档（profile 条目的 Config）
+ * **只接受 volatile 字段**——宿主侧 volatileForm/isVolatilePath 会直接拒掉
+ * 非 volatile 路径（`Config field "x" is not volatile`），没有 volatile 字段
+ * 的条目连设置页都不会出现。代价是 apply 收到的是 `.get()` 引用而不是普通值，
+ * 读取前必须过 resolveConfig（见下）。
+ */
+export const Config = z.object({
+  enabled: z.boolean().default(true).volatile().description('advisor 总开关：关闭后不注册 advisor 工具与升级守则提示段，已保存的模型配置保留'),
+  provider: z.string().default('').volatile().description('审查模型所在的 provider 路由名（ctx.llm 适配器路由，如 example-provider）'),
+  model: z.string().default('').volatile().description('该路由下的审查模型 id（如 deepseek-v4-pro）'),
+  effort: z.string().default('').volatile().description('审查模型推理档位；留空走模型默认'),
+  disabledForModels: z.array(z.string()).default([]).volatile().description('执行模型黑名单："model" / "provider/model" / "provider/model@minEffort"'),
+  guidelines: z.array(z.string()).default([]).volatile().description('覆盖默认的升级守则（系统提示段文本，每条一行）'),
+  patrolEnabled: z.boolean().default(true).volatile().description('巡逻模式：执行中每 N 步自动把会话快照发给审查模型检查是否跑偏，跑偏时注入纠偏'),
+  patrolEverySteps: z.number().default(6).min(2).max(500).volatile().description('巡逻间隔（模型请求步数）；每次巡逻整段会话计费一次审查模型。当保底用可以配大（如 100）'),
+  patrolImmuneTurns: z.number().default(3).min(0).max(20).volatile().description('纠偏冷却：一次纠偏注入后的 N 个请求内，新的 CORRECTION 降级为只记日志不注入（STOP 不受冷却限制）'),
+  investigate: z.boolean().default(true).volatile().description('审查者调查工具：允许审查模型在裁决前用只读工具（工作区内搜索/读文件）亲自核实，建议更有据'),
 })
+
+/**
+ * 把 `.volatile()` 字段的实时引用（带 `.get()`）摊平成普通值。
+ *
+ * schemastery：volatile 字段解析成 "stable reference read with .get()"，
+ * 而**默认值仍是普通数据**——两种形态都要认。每次读取都过一遍，才能看到
+ * 设置页刚提交的值（volatile 提交是就地生效、不重挂插件）。
+ * 同 dsh-free-search 的 resolveConfig 做法。
+ *
+ * @param config - apply 收到的原始 config，或任意替代来源。
+ * @returns 可直接读的普通配置对象。
+ */
+export function resolveConfig(config: Config | undefined): Config {
+  if (config === null || typeof config !== 'object') return {}
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(config)) {
+    out[key] = value !== null && typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function'
+      ? (value as { get: () => unknown }).get()
+      : value
+  }
+  return out as Config
+}
 
 /** 已武装的审查路由；undefined = advisor 关闭 */
 export interface Selection {

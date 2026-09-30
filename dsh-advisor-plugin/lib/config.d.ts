@@ -26,7 +26,50 @@ export interface Config {
     patrolImmuneTurns?: number;
     investigate?: boolean;
 }
-export declare const Config: z<Config>;
+/**
+ * 配置 schema。
+ *
+ * 每个可编辑字段都标 `.volatile()`：0.2 的设置文档（profile 条目的 Config）
+ * **只接受 volatile 字段**——宿主侧 volatileForm/isVolatilePath 会直接拒掉
+ * 非 volatile 路径（`Config field "x" is not volatile`），没有 volatile 字段
+ * 的条目连设置页都不会出现。代价是 apply 收到的是 `.get()` 引用而不是普通值，
+ * 读取前必须过 resolveConfig（见下）。
+ */
+export declare const Config: z<Schemastery.ObjectS<NoInfer<{
+    enabled: z<boolean, boolean, "volatile-defined">;
+    provider: z<string, string, "volatile-defined">;
+    model: z<string, string, "volatile-defined">;
+    effort: z<string, string, "volatile-defined">;
+    disabledForModels: z<NoInfer<string[]>, NoInfer<string[]>, "volatile-defined">;
+    guidelines: z<NoInfer<string[]>, NoInfer<string[]>, "volatile-defined">;
+    patrolEnabled: z<boolean, boolean, "volatile-defined">;
+    patrolEverySteps: z<number, number, "volatile-defined">;
+    patrolImmuneTurns: z<number, number, "volatile-defined">;
+    investigate: z<boolean, boolean, "volatile-defined">;
+}>>, Schemastery.ObjectT<NoInfer<{
+    enabled: z<boolean, boolean, "volatile-defined">;
+    provider: z<string, string, "volatile-defined">;
+    model: z<string, string, "volatile-defined">;
+    effort: z<string, string, "volatile-defined">;
+    disabledForModels: z<NoInfer<string[]>, NoInfer<string[]>, "volatile-defined">;
+    guidelines: z<NoInfer<string[]>, NoInfer<string[]>, "volatile-defined">;
+    patrolEnabled: z<boolean, boolean, "volatile-defined">;
+    patrolEverySteps: z<number, number, "volatile-defined">;
+    patrolImmuneTurns: z<number, number, "volatile-defined">;
+    investigate: z<boolean, boolean, "volatile-defined">;
+}>>, "plain">;
+/**
+ * 把 `.volatile()` 字段的实时引用（带 `.get()`）摊平成普通值。
+ *
+ * schemastery：volatile 字段解析成 "stable reference read with .get()"，
+ * 而**默认值仍是普通数据**——两种形态都要认。每次读取都过一遍，才能看到
+ * 设置页刚提交的值（volatile 提交是就地生效、不重挂插件）。
+ * 同 dsh-free-search 的 resolveConfig 做法。
+ *
+ * @param config - apply 收到的原始 config，或任意替代来源。
+ * @returns 可直接读的普通配置对象。
+ */
+export declare function resolveConfig(config: Config | undefined): Config;
 /** 已武装的审查路由；undefined = advisor 关闭 */
 export interface Selection {
     readonly provider: string;

@@ -200,13 +200,48 @@ Remote namespace is an inject token, and several installed plugins declare
 `remote.session` the same way. A missing catalog is now surfaced with its
 `code: message` in the console instead of a bare failure.
 
+## Fix 7 — the settings document only writes `.volatile()` fields (this is what "Save failed" was)
+
+0.2's settings write path rejects every non-volatile path:
+
+```js
+const form = volatileForm(schema);
+if (form === void 0) throw new Error(`Plugin entry "${ns}" has no volatile fields`);
+for (const path of paths) if (!isVolatilePath(schema, path)) throw new Error(`Config field "${path.join('.')}" is not volatile`);
+```
+
+Upstream's Config used plain `z.boolean().default(true).description(...)` fields with
+no `.volatile()` anywhere, so `volatileForm` returned `undefined` and **every** card
+write was refused. Working plugins declare it — `dsh-free-search` uses
+`z.string().default("bing").volatile()` and notes that `.volatile()` needs the scoped
+`@deepseek-ai/schemastery` (>= 3.18.2, satisfied here at 3.18.4).
+
+All ten fields are now `.volatile()`. That changes the runtime contract: schemastery
+parses a volatile field into "a stable reference read with `.get()`" (defaults stay
+ordinary data), so `apply` receives references, not values. Two consequences, both
+handled:
+
+- **Reads** go through `resolveConfig()`, which unwraps anything with a `.get()`
+  and passes plain defaults through, called on every read (`current()`) rather than
+  once — a cached snapshot would pin the old values.
+- **Commits** are in-place and do **not** remount the plugin, so arming has to track
+  them: the host half now subscribes to `settings/document-updated`, recomputes
+  `resolveSelection`, and re-registers the tool + prompt section only when the
+  resolved config actually changed. Without this, saving a reviewer would not arm
+  the advisor until a restart.
+
+Note the asymmetry when testing: the client half is read from disk per request, so a
+page refresh picks up changes — but the **host half is loaded into the node process at
+boot**, so host-side changes need a `dsh web` restart. The live Config projection tells
+you which one you have: a volatile node carries `x-cordis.volatile: true`.
+
 ## Verification
 
 ```bash
 bash scripts/link-deps.sh   # after any npm install; resolves the dsh path dynamically
 npm run build               # tsc (host) + esbuild (client bundle)
 npx vitest run              # 53 upstream tests
-node test/compat-0.2.cjs    # 14 fork assertions: inject, remote catalog, slots, module id,
+node test/compat-0.2.cjs    # 17 fork assertions: inject, remote catalog, slots, module id,
                             # source kind, dead files, scope, form projection
 ```
 

@@ -98,8 +98,7 @@ check("注入上下文来源为自声明 kind 'advisor-patrol' + form 'notice'",
   assert.ok(/kind:\s*'advisor-patrol'/.test(patrol), "没找到 kind: 'advisor-patrol'")
   assert.ok(/form:\s*'notice'/.test(patrol), "没找到 form: 'notice'")
   assert.ok(patrol.includes('boundContextSummary'), 'summary 未经 boundContextSummary 截断')
-  assert.ok(!/kind:\s*'plugin'/.test(patrol), "仍在用 0.2 已移除的 catch-all kind 'plugin'")
-})
+  assert.ok(!/kind:\s*'plugin'/.test(patrol), "仍在用 0.2 已移除的 catch-all kind 'plugin'")})
 
 // 5：死文件真的消失（tsc 只增不删）
 check('上一版构建的死文件已清理', () => {
@@ -209,6 +208,43 @@ const run = async () => {
     })
     await viaMutate.set('provider', 'gw')
     assert.deepEqual(ops, [[{ op: 'set', path: ['provider'], value: 'gw' }]])
+  })
+
+  // 8：设置写入（.volatile() 是 0.2 设置文档接受写入的前提）
+  const cfg = await import(join(root, 'lib/config.js'))
+
+  check('Config 每个可编辑字段都标了 .volatile()（否则宿主拒写：is not volatile）', () => {
+    const dict = cfg.Config?.dict
+    assert.ok(dict, 'Config 不是 object schema（拿不到 dict）')
+    const fields = Object.keys(dict)
+    assert.ok(fields.length >= 10, `字段数异常：${fields.length}`)
+    const missing = fields.filter((key) => dict[key]?.meta?.volatile !== true)
+    assert.deepEqual(missing, [], `以下字段未标 .volatile()，设置页写入会被拒：${missing.join(', ')}`)
+  })
+
+  check('resolveConfig 摊平 volatile 引用，且原样放过普通默认值', () => {
+    const ref = (value) => ({ get: () => value })
+    const resolved = cfg.resolveConfig({
+      enabled: ref(true),
+      provider: ref('codex'),
+      model: 'gpt-6-sol',        // 默认值仍是普通数据
+      patrolEverySteps: ref(6),
+      guidelines: ref(['only when stuck']),
+    })
+    assert.deepEqual(resolved, {
+      enabled: true,
+      provider: 'codex',
+      model: 'gpt-6-sol',
+      patrolEverySteps: 6,
+      guidelines: ['only when stuck'],
+    })
+    assert.deepEqual(cfg.resolveConfig(undefined), {}, '空 config 应回落到 {}')
+  })
+
+  check('武装状态跟随设置提交（订阅 settings/document-updated 并 resolveConfig）', () => {
+    const hostEntry = read('lib/index.js')
+    assert.ok(hostEntry.includes('settings/document-updated'), '未订阅 settings/document-updated，设置保存后不会重新武装')
+    assert.ok(hostEntry.includes('resolveConfig'), 'host 半未使用 resolveConfig（会读到 volatile 引用而非值）')
   })
 
   console.log(`\n${passed} 条断言通过${process.exitCode === 1 ? '，存在失败项' : ''}`)

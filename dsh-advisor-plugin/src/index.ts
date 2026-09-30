@@ -20,7 +20,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-tools'
-import { Config as ConfigSchema, resolveSelection, type Config, type Selection } from './config.js'
+import { Config as ConfigSchema, resolveConfig, resolveSelection, type Config, type Selection } from './config.js'
 import { registerAdvisorCommand } from './command.js'
 import { registerGating } from './gating.js'
 import { createHistoryBuilder } from './history.js'
@@ -36,9 +36,14 @@ export { ConfigSchema as Config }
 export function apply(ctx: Context, config: Config) {
   const state: { config: Config, selection: Selection | undefined, settingsInfo: string } = {
     config,
-    selection: resolveSelection(config),
+    selection: undefined,
     settingsInfo: 'settings 服务未接入',
   }
+
+  // 每次读取都摊平 volatile 引用：设置页提交的是就地生效的实时引用，
+  // 缓存一次就会一直读到旧值。
+  const current = () => resolveConfig(state.config)
+  state.selection = resolveSelection(current())
 
   const buildMessages = createHistoryBuilder(ctx)
   let registration: (() => void) | undefined
@@ -48,29 +53,44 @@ export function apply(ctx: Context, config: Config) {
     registration?.()
     registration = undefined
     if (state.selection === undefined) return
-    const disposeTool = ctx.tools.register(createAdvisorTool(ctx, () => state.selection, buildMessages, () => state.config))
-    const disposeSection = registerAdvisorSection(ctx, state.config)
+    const disposeTool = ctx.tools.register(createAdvisorTool(ctx, () => state.selection, buildMessages, () => current()))
+    const disposeSection = registerAdvisorSection(ctx, current())
     registration = () => {
       disposeTool()
       disposeSection()
     }
   }
 
-  const disposeGating = registerGating(ctx, () => state.config, () => state.selection !== undefined)
+  const disposeGating = registerGating(ctx, () => current(), () => state.selection !== undefined)
 
   // 巡逻模式：按间隔自动检查执行是否跑偏并注入纠偏（未武装/被禁用时内部 no-op）
   const disposePatrol = registerPatrol(ctx, {
-    getConfig: () => state.config,
+    getConfig: () => current(),
     getSelection: () => state.selection,
     buildMessages,
   })
-  if (state.config.patrolEnabled !== false) {
-    console.log(`[dsh-advisor] 巡逻模式开启：每 ${state.config.patrolEverySteps ?? 6} 步自动检查（间隔下限 90s）`)
+  if (current().patrolEnabled !== false) {
+    console.log(`[dsh-advisor] 巡逻模式开启：每 ${current().patrolEverySteps ?? 6} 步自动检查（间隔下限 90s）`)
   }
+
+  // 0.2：设置以条目 Config 的 volatile 字段就地提交，插件不会被重挂，
+  // 所以武装状态必须自己跟着 settings/document-updated 重算——否则设置页
+  // 选好审查模型后要重启才生效。按解析后的配置签名比较，只在真的变了才重挂。
+  let configSignature = JSON.stringify(current())
+  ctx.on('settings/document-updated', () => {
+    const next = JSON.stringify(current())
+    if (next === configSignature) return
+    configSignature = next
+    state.selection = resolveSelection(current())
+    reconcileRegistration()
+    console.log(`[dsh-advisor] 设置已变更：${state.selection === undefined
+      ? '未武装（provider/model 不完整或总开关关闭）——advisor 工具不注册'
+      : `已武装 ${state.selection.provider}/${state.selection.model}${state.selection.effort === undefined ? '' : ` (${state.selection.effort})`}`}`)
+  })
 
   // /advisor 命令：commands 服务就绪后注册（fiber 卸载自动清理）
   ctx.inject(['commands'], (commandsCtx) => {
-    const dispose = registerAdvisorCommand(commandsCtx, () => state.config, () => state.selection, () => state.settingsInfo)
+    const dispose = registerAdvisorCommand(commandsCtx, () => current(), () => state.selection, () => state.settingsInfo)
     if (dispose !== undefined) commandsCtx.effect(() => dispose, 'dsh-advisor: /advisor command')
   })
 
