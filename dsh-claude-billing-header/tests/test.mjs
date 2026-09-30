@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   BILLING_PREFIX,
   CLAUDE_CODE_TOOL_NAMES,
@@ -15,6 +16,7 @@ import {
   apply,
   patchFetch,
   renameBodyTools,
+  normalizeBodyToolIds,
   requiredClaudeCodeVersion,
   resolveConfig,
   setBillingHeaderVersion,
@@ -657,7 +659,81 @@ const ALL_TOOL_NAMES = [
   assert.equal(isVersionPinned({ version: "2.1.260" }), true);
 }
 
-// 26. The gate is recovered: adopt the version the error names, send once
+// 26. Request-local ids are paired, collision-free and deterministic; legal
+// ids, cache controls and the caller's body stay unchanged.
+{
+  const foreign = "call_01a0|fc_01a0";
+  const other = "call_01a0!fc_01a0";
+  const reserved = `call_${createHash("sha256").update(foreign).digest("hex").slice(0, 40)}`;
+  const body = {
+    system: [{ type: "text", text: "already billed", cache_control: { type: "ephemeral" } }],
+    tools: [{ name: "memory_get" }],
+    messages: [
+      { role: "assistant", content: [
+        { type: "tool_use", id: foreign, name: "memory_get", input: {}, cache_control: { type: "ephemeral" } },
+        { type: "tool_use", id: other, name: "memory_get", input: {} },
+        { type: "tool_use", id: reserved, name: "memory_get", input: {} },
+        { type: "tool_use", id: "legal_9", name: "memory_get", input: {} },
+      ] },
+      { role: "user", content: [
+        { type: "tool_result", tool_use_id: foreign, content: "first" },
+        { type: "tool_result", tool_use_id: other, content: "second" },
+        { type: "tool_result", tool_use_id: reserved, content: "third" },
+        { type: "tool_result", tool_use_id: "legal_9", content: "fourth" },
+      ] },
+    ],
+  };
+  const before = structuredClone(body);
+  const normalized = normalizeBodyToolIds(body);
+  const uses = normalized.messages[0].content;
+  const results = normalized.messages[1].content;
+  assert.deepEqual(normalized, normalizeBodyToolIds(body), "replayed history must emit identical ids");
+  assert.deepEqual(body, before, "the stored input must remain untouched");
+  for (let i = 0; i < uses.length; i += 1) {
+    assert.match(uses[i].id, /^[a-zA-Z0-9_-]+$/);
+    assert.equal(uses[i].id, results[i].tool_use_id);
+  }
+  assert.notEqual(uses[0].id, uses[1].id);
+  assert.notEqual(uses[0].id, reserved, "reserve even legal ids encountered later");
+  assert.equal(uses[2].id, reserved);
+  assert.equal(uses[3].id, "legal_9");
+  assert.deepEqual(uses[0].cache_control, before.messages[0].content[0].cache_control);
+  assert.deepEqual(normalized.system, before.system);
+  assert.equal(normalizeBodyToolIds({ ...body, messages: before.messages.map((message) => ({
+    ...message,
+    content: message.content.slice(2),
+  })) }), null, "no rewrite when every id is legal");
+  const renamed = renameBodyTools(normalized, PREFIX);
+  assert.equal(renamed.body.messages[0].content[0].id, uses[0].id);
+  assert.equal(renamed.body.messages[0].content[0].name, "mcp__dsh__memory_get");
+
+  const sent = [];
+  const fetch = patchFetch(async (input, init) => {
+    sent.push(init.body);
+    return new Response("{}", { status: 200 });
+  }, resolveConfig({}), undefined);
+  const wire = { ...body, system: [{ type: "text", text: "You are Claude Code" }] };
+  const original = JSON.stringify(wire);
+  await fetch(MESSAGES_URL, {
+    method: "POST",
+    headers: { authorization: "Bearer sk-ant-oat01-x" },
+    body: original,
+  });
+  assert.equal(JSON.stringify(wire), original);
+  const transmitted = JSON.parse(sent[0]);
+  assert.equal(transmitted.messages[0].content[0].id, transmitted.messages[1].content[0].tool_use_id);
+  assert.match(transmitted.messages[0].content[0].id, /^[a-zA-Z0-9_-]+$/);
+  assert.equal(transmitted.messages[0].content[0].name, "mcp__dsh__memory_get");
+  const apiKey = { authorization: "Bearer sk-ant-api01-x" };
+  await fetch(MESSAGES_URL, { method: "POST", headers: apiKey, body: original });
+  await fetch("https://api.anthropic.com/v1/models", {
+    method: "POST", headers: { authorization: "Bearer sk-ant-oat01-x" }, body: original,
+  });
+  assert.equal(sent[1], original, "non-OAuth body must pass through verbatim");
+  assert.equal(sent[2], original, "non-messages body must pass through verbatim");
+}
+
+// 27. The gate is recovered: adopt the version the error names, send once
 // more, and remember it so later requests skip the rejected attempt.
 // Runs last — it leaves the learned version in module state on purpose.
 {
@@ -673,4 +749,4 @@ const ALL_TOOL_NAMES = [
   assert.equal(bodies[2].tools[0].name, "Bash", "the retry keeps the rest of the rewrite");
 }
 
-console.log("dsh-claude-billing-header: 26 tests passed");
+console.log("dsh-claude-billing-header: 27 tests passed");

@@ -496,6 +496,51 @@ export function renameBodyTools(body, prefix) {
   };
 }
 
+/** Normalize foreign tool-call ids only in this Anthropic request body. */
+export function normalizeBodyToolIds(body) {
+  if (!isObject(body) || !Array.isArray(body.messages)) return null;
+  const rawIds = [];
+  for (const message of body.messages) {
+    if (!isObject(message) || !Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (!isObject(block)) continue;
+      if (block.type === "tool_use" && typeof block.id === "string") rawIds.push(block.id);
+      if (block.type === "tool_result" && typeof block.tool_use_id === "string") rawIds.push(block.tool_use_id);
+    }
+  }
+  const used = new Set(rawIds.filter((id) => /^[a-zA-Z0-9_-]+$/.test(id)));
+  const mapped = new Map();
+  for (const id of rawIds) {
+    if (used.has(id) || mapped.has(id)) continue;
+    let attempt = 0;
+    let replacement;
+    do {
+      const hash = createHash("sha256");
+      if (attempt > 0) hash.update(String(attempt)).update("\0");
+      replacement = `call_${hash.update(id).digest("hex").slice(0, 40)}`;
+      attempt += 1;
+    } while (used.has(replacement));
+    mapped.set(id, replacement);
+    used.add(replacement);
+  }
+  if (mapped.size === 0) return null;
+  return {
+    ...body,
+    messages: body.messages.map((message) => {
+      if (!isObject(message) || !Array.isArray(message.content)) return message;
+      return {
+        ...message,
+        content: message.content.map((block) => {
+          if (!isObject(block)) return block;
+          if (block.type === "tool_use" && mapped.has(block.id)) return { ...block, id: mapped.get(block.id) };
+          if (block.type === "tool_result" && mapped.has(block.tool_use_id)) return { ...block, tool_use_id: mapped.get(block.tool_use_id) };
+          return block;
+        }),
+      };
+    }),
+  };
+}
+
 /**
  * Map one StreamChunk's tool name back from the wire name. The claude
  * adapter names the tool in `tool-call-delta` (on open and on every
@@ -608,9 +653,11 @@ export function patchFetch(original, resolved, onEvent) {
         renamed = rt.renamed;
       }
     }
+    const normalized = normalizeBodyToolIds(working);
+    if (normalized !== null) working = normalized;
     const next = ensureBillingHeader(working, version, entrypoint);
     if (next !== null) working = next;
-    const mutated = dt !== null || next !== null || renamed > 0;
+    const mutated = dt !== null || next !== null || renamed > 0 || normalized !== null;
     if (emit) {
       const system0 =
         isObject(parsed) && Array.isArray(parsed.system) && parsed.system.length > 0
