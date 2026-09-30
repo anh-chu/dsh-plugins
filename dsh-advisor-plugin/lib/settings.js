@@ -46,5 +46,9 @@ export function wireSettings(ctx, state, onConfigChange) {
             return { info: `settings.register 失败：${error instanceof Error ? error.message : String(error)}` };
         }
     }
-    return { info: 'settings 服务形态未知——advisor 配置固定为插件组合层' };
+    // 0.2：设置文档改为"每个 profile 条目自己的 Config"，两个命名空间注册面
+    // （installSection / register）都不再存在。Config 仍由 loader 从条目 config
+    // 交给 apply()，所以配置照常生效——由设置页的 Advisor 卡片（configForms）
+    // 或直接编辑 profile 的 cordis.patch.yml 条目 config 写入。
+    return { info: '宿主无命名空间注册面（0.2 形态）：配置来自 profile 条目 config，可在 设置 → 插件 → Advisor 卡片修改' };
 }

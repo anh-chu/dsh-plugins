@@ -82,9 +82,22 @@ hand, so it cannot drift again. A missing `name` fails the build loudly.
 `configForms` first, `settingsScope` as fallback, `undefined` when neither
 exists. Two details that matter:
 
-- The `configForms` key is the **settings namespace** the host half registers
-  (`settings.installSection(ctx, 'advisor', …)`), *not* the loader entry id
-  (`dsh-advisor-plugin`).
+- The `configForms` key is the **loader entry id**, not the old namespace.
+  0.2's host-side `describe()` emits `ns: entry.options.id`, and the client's
+  `get(entryId)` is documented as "one Host plugin entry" — the settings
+  document moved from *namespaces a plugin registers itself* to *each profile
+  entry's own `Config`*. The key is therefore `dsh-advisor-plugin` (this
+  plugin's patch id, from its own `cordis.patch.yml`), with `advisor` kept as a
+  fallback probe for hosts where the namespace form is the served one. Since
+  `get()` fabricates a form for any key, the probe decides by snapshot
+  `status` (`unavailable` = not served) rather than by whether a form exists.
+- 0.2 also removed both host-side namespace registration faces
+  (`settings.installSection` and `settings.register`), so the host half no
+  longer registers a namespace at all. That is harmless: the loader still hands
+  the entry's `Config` to `apply()`, so the configuration is live and editable
+  through the card (or by editing the entry's `config:` in the profile patch).
+  `wireSettings` now reports this shape instead of "settings service
+  unavailable".
 - Resolution is deferred through `ctx.inject([...])` onto a swappable scope
   (`createResolvingScope`), because either service may arrive after this
   plugin's `apply()`. Before a source attaches, the card renders its existing

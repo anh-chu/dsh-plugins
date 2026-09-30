@@ -145,6 +145,36 @@ const run = async () => {
     assert.equal(mod.resolveConfigForms({ get: () => undefined }), undefined)
   })
 
+  check('configForms 键：优先 loader 条目 id，未被服务时回退旧命名空间', async () => {
+    const seen = []
+    const hostServing = (served) => ({
+      get: (name) => name === 'configForms'
+        ? {
+          get: (key) => {
+            seen.push(key)
+            return {
+              getSnapshot: () => ({ status: served.includes(key) ? 'ready' : 'unavailable', value: { enabled: true }, writable: true }),
+              subscribe: () => () => {},
+            }
+          },
+        }
+        : undefined,
+    })
+    // 0.2：条目 id 被服务 → 用它，不再碰旧命名空间
+    seen.length = 0
+    const modern = mod.resolveConfigForms(hostServing(['dsh-advisor-plugin']))
+    assert.deepEqual(seen, ['dsh-advisor-plugin'], `探测顺序不对：${seen.join(',')}`)
+    assert.equal(modern.getSnapshot().status, 'ready')
+    // 旧宿主：只有 'advisor' 被服务 → 回退
+    seen.length = 0
+    const legacy = mod.resolveConfigForms(hostServing(['advisor']))
+    assert.deepEqual(seen, ['dsh-advisor-plugin', 'advisor'])
+    assert.equal(legacy.getSnapshot().status, 'ready')
+    // 都没被服务 → 仍返回条目 id 表单（卡片渲染 unavailable 只读态）
+    const none = mod.resolveConfigForms(hostServing([]))
+    assert.equal(none.getSnapshot().status, 'unavailable')
+  })
+
   check('configForms 投影：裸字段名写入，被拒时抛错', async () => {
     const calls = []
     const ok = mod.projectConfigForm({

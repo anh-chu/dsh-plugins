@@ -639,7 +639,9 @@ var AdvisorCardController = class {
 };
 
 // src/client/settings-controller.ts
-var SETTINGS_NAMESPACE = "advisor";
+var LEGACY_SETTINGS_NAMESPACE = "advisor";
+var ENTRY_ID = "dsh-advisor-plugin";
+var SETTINGS_KEYS = [ENTRY_ID, LEGACY_SETTINGS_NAMESPACE];
 var UNAVAILABLE_SNAPSHOT = {
   status: "unavailable",
   value: void 0,
@@ -700,14 +702,20 @@ function readService(host, name) {
   }
   return host[name];
 }
-function resolveConfigForms(host) {
+function resolveConfigForms(host, keys = SETTINGS_KEYS) {
   try {
     const service = readService(host, "configForms");
     if (service === void 0 || service === null || typeof service.get !== "function") return void 0;
-    const form = service.get(SETTINGS_NAMESPACE);
-    if (form === void 0 || form === null) return void 0;
-    if (typeof form.getSnapshot !== "function" || typeof form.subscribe !== "function") return void 0;
-    return projectConfigForm(form);
+    let fallback;
+    for (const key of keys) {
+      const form = service.get(key);
+      if (form === void 0 || form === null) continue;
+      if (typeof form.getSnapshot !== "function" || typeof form.subscribe !== "function") continue;
+      fallback ??= form;
+      const status = form.getSnapshot().status;
+      if (status !== "unavailable") return projectConfigForm(form);
+    }
+    return fallback === void 0 ? void 0 : projectConfigForm(fallback);
   } catch (error) {
     console.warn("[dsh-advisor] configForms \u8BBE\u7F6E\u6E90\u89E3\u6790\u5931\u8D25\uFF08\u5361\u7247\u5C06\u663E\u793A\u4E3A\u4E0D\u53EF\u7528\uFF09\uFF1A", error);
     return void 0;
@@ -717,7 +725,7 @@ function resolveLegacySettingsScope(host) {
   try {
     const service = readService(host, "settingsScope");
     if (service === void 0 || service === null || typeof service.bind !== "function") return void 0;
-    return service.bind({ namespace: SETTINGS_NAMESPACE });
+    return service.bind({ namespace: LEGACY_SETTINGS_NAMESPACE });
   } catch (error) {
     console.warn("[dsh-advisor] settingsScope \u8BBE\u7F6E\u6E90\u89E3\u6790\u5931\u8D25\uFF08\u5361\u7247\u5C06\u663E\u793A\u4E3A\u4E0D\u53EF\u7528\uFF09\uFF1A", error);
     return void 0;

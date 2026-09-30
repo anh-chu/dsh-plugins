@@ -18,8 +18,19 @@
  * 控制器，服务就绪后 attach，由 index.ts 的 ctx.inject([...]) 软等待驱动。
  */
 import type { AdvisorSection, AdvisorSettingsScope } from './controller.js';
-/** Host 半注册的设置命名空间（`settings.installSection(ctx, 'advisor', …)`） */
-export declare const SETTINGS_NAMESPACE = "advisor";
+/** Host 半注册的旧设置命名空间（≤0.1.6 的 settingsScope 用它寻址） */
+export declare const LEGACY_SETTINGS_NAMESPACE = "advisor";
+/**
+ * 0.1.7+ configForms 的寻址键 = **loader 条目 id**，不是旧命名空间。
+ *
+ * 0.2 的 Host 侧 `describe()` 里是 `ns: entry.options.id`，客户端 `get(entryId)`
+ * 的文档也写明 "one Host plugin entry"——设置文档已从"插件自注册命名空间"改为
+ * "每个 profile 条目自己的 Config"。本插件的条目 id 由自身 cordis.patch.yml
+ * 决定（`- insert: - id: dsh-advisor-plugin`），与包名一致。
+ */
+export declare const ENTRY_ID = "dsh-advisor-plugin";
+/** 探测顺序：新键（条目 id）优先，旧命名空间兜底 */
+export declare const SETTINGS_KEYS: readonly string[];
 /** 0.1.7+ 的 configForms 单命名空间表单（结构收窄，跨版本无关） */
 export interface ConfigFormFace<T> {
     getSnapshot(): {
@@ -72,7 +83,14 @@ export declare function createResolvingScope(): ResolvingScope;
  * 分支（controller.save 的 catch → failed）可见，而不是静默当成成功。
  */
 export declare function projectConfigForm(form: ConfigFormFace<AdvisorSection>): AdvisorSettingsScope<AdvisorSection>;
-/** 0.1.7+：按设置命名空间取 configForms 表单；不支持时返回 undefined */
-export declare function resolveConfigForms(host: SettingsHostFace): AdvisorSettingsScope<AdvisorSection> | undefined;
+/**
+ * 0.1.7+：取本插件条目的 configForms 表单；服务缺席时返回 undefined。
+ *
+ * `get(entryId)` 对任何键都会现场造一个表单，所以"存在"不代表"被服务"——
+ * 判断依据是快照的 status：`unavailable` = 该命名空间没被 Host 提供。
+ * 因此按 SETTINGS_KEYS 顺序探测，谁被服务就用谁（首帧多为 loading，算命中），
+ * 全都没被服务时退回第一个，卡片照旧渲染只读不可用态。
+ */
+export declare function resolveConfigForms(host: SettingsHostFace, keys?: readonly string[]): AdvisorSettingsScope<AdvisorSection> | undefined;
 /** ≤0.1.6：命名空间作用域；服务缺席时返回 undefined */
 export declare function resolveLegacySettingsScope(host: SettingsHostFace): AdvisorSettingsScope<AdvisorSection> | undefined;
