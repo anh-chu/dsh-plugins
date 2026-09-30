@@ -49,7 +49,20 @@ x-anthropic-billing-header: cc_version=2.1.236.abc; cc_entrypoint=cli; cch=12345
 - Preserves every existing block and `cache_control` by value.
 - `cc_version` defaults to live `claude --version` output (fallback
   `2.1.263`, same as the subscriptions plugin UA). Env
-  `PI_CLAUDE_CODE_VERSION` / `CLAUDE_CODE_VERSION` overrides it.
+  `PI_CLAUDE_CODE_VERSION` / `CLAUDE_CODE_VERSION` overrides it, as does
+  `version:` on the row. The value is detected once per process, so a CLI
+  upgrade changes the header only after a DSH restart.
+- When Anthropic rejects a request because the reported version is below a
+  newly released model's floor — the `claude_code_version_too_old` error — the
+  plugin reads the version that error names, rebuilds the billing header at
+  it, and sends the request once more. The learned version is remembered for
+  the process, so only the first request after a floor rise pays for the
+  rejected attempt. This is what removes the dependency on how current the
+  installed CLI happens to be.
+- An explicit version (env var or `version:`) is **absolute** and turns
+  recovery off: it is reported verbatim and never raised. That is deliberate —
+  a stale pin can itself cause the floor error — but it means a pin has to be
+  maintained by hand.
 - `cc_entrypoint` defaults to `cli`. Env `PI_CLAUDE_CODE_ENTRYPOINT` /
   `CLAUDE_CODE_ENTRYPOINT` overrides it.
 

@@ -99,6 +99,101 @@ export function stripOwnPatchLayers(fetchImpl) {
   return current;
 }
 
+/**
+ * A Claude Code version learned from a `claude_code_version_too_old`
+ * rejection. Remembered for the life of the process so only the first request
+ * after a floor rise pays for a rejected attempt.
+ */
+let sessionVersion;
+
+/** -1 / 0 / 1 for two dotted numeric versions. */
+export function compareVersions(a, b) {
+  const left = String(a).split(".");
+  const right = String(b).split(".");
+  for (let i = 0; i < 3; i += 1) {
+    const x = Number(left[i] ?? 0);
+    const y = Number(right[i] ?? 0);
+    if (x !== y) return x > y ? 1 : -1;
+  }
+  return 0;
+}
+
+/**
+ * The Claude Code version Anthropic demands, when a failure is that gate:
+ *   {"type":"error","error":{"type":"invalid_request_error",
+ *    "message":"Claude Code 2.1.260 does not support this model; version
+ *    2.1.280 or newer is required.",
+ *    "details":{"error_code":"claude_code_version_too_old"}}}
+ * @returns the version string, or undefined when this is not that failure.
+ */
+export function requiredClaudeCodeVersion(payload) {
+  if (!isObject(payload) || !isObject(payload.error)) return undefined;
+  const { error } = payload;
+  const message = typeof error.message === "string" ? error.message : "";
+  const details = isObject(error.details) ? error.details : undefined;
+  const code =
+    details !== undefined && typeof details.error_code === "string"
+      ? details.error_code
+      : undefined;
+  if (code !== "claude_code_version_too_old" && !/does not support this model/i.test(message)) {
+    return undefined;
+  }
+  const named = message.match(/version\s+(\d+\.\d+\.\d+)\s+or newer/i);
+  return named === null ? undefined : named[1];
+}
+
+/**
+ * Rewrite the billing header block at a new Claude Code version, in place, so
+ * every other block keeps its position and its cache_control. Returns null
+ * when the body carries no billing header, or already names that version.
+ */
+export function setBillingHeaderVersion(body, version, entrypoint) {
+  if (!isObject(body) || !Array.isArray(body.system)) return null;
+  const index = body.system.findIndex(
+    (block) =>
+      isObject(block) && typeof block.text === "string" && block.text.startsWith(BILLING_PREFIX),
+  );
+  if (index === -1) return null;
+  const text = buildBillingHeader(body.messages, version, entrypoint);
+  if (body.system[index].text === text) return null;
+  const system = body.system.map((block, i) => (i === index ? { ...block, text } : block));
+  return { ...body, system };
+}
+
+/**
+ * True when the version came from an explicit setting rather than detection.
+ * An explicit version is absolute: it is reported verbatim and disables
+ * recovery, so a stale pin can itself cause the gate it would otherwise fix.
+ */
+export function isVersionPinned(resolved) {
+  return (
+    typeof process.env.PI_CLAUDE_CODE_VERSION === "string" ||
+    typeof process.env.CLAUDE_CODE_VERSION === "string" ||
+    (resolved !== undefined && resolved.version !== undefined)
+  );
+}
+
+/** The version to report, preferring one learned from a rejection. */
+function resolveRequestVersion(resolved) {
+  return sessionVersion ?? resolveVersion(resolved.version);
+}
+
+/**
+ * Read a small JSON error body without consuming the caller's copy. Only
+ * called for a non-2xx JSON response, so the buffered tee is short-lived.
+ */
+async function readErrorPayload(response) {
+  try {
+    const type = response.headers.get("content-type") ?? "";
+    if (!type.includes("json")) return undefined;
+    const text = await response.clone().text();
+    if (text.length === 0 || text.length > 65536) return undefined;
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 export function resolveConfig(config = {}) {
   const entrypoint =
     typeof config.entrypoint === "string" && config.entrypoint.length > 0
@@ -449,7 +544,7 @@ function hostPath(url) {
 
 export function patchFetch(original, resolved, onEvent) {
   const emit = typeof onEvent === "function" ? onEvent : undefined;
-  const patchedFetch = function patchedFetch(input, init) {
+  const patchedFetch = async function patchedFetch(input, init) {
     const url = typeof input === "string" ? input : input?.url;
     // Observe only Anthropic traffic; everything else passes silently.
     const watched = typeof url === "string" && url.includes("anthropic");
@@ -496,7 +591,7 @@ export function patchFetch(original, resolved, onEvent) {
       }
       return original.apply(this, arguments);
     }
-    const version = resolveVersion(resolved.version);
+    const version = resolveRequestVersion(resolved);
     const entrypoint = resolveEntrypoint(resolved.entrypoint);
     let working = parsed;
     let dropped = [];
@@ -541,7 +636,33 @@ export function patchFetch(original, resolved, onEvent) {
       writeFile(resolved.captureFile, JSON.stringify(parsed), "utf8").catch(() => {});
     }
     if (!mutated) return original.apply(this, arguments);
-    return original.call(this, input, { ...init, body: JSON.stringify(working) });
+    const send = (body) => original.call(this, input, { ...init, body: JSON.stringify(body) });
+    const response = await send(working);
+    // Anthropic gates a newly released model on the Claude Code version the
+    // billing header reports. When that gate rejects this request, it names
+    // the version it wants: adopt it, remember it, and send once more. An
+    // explicit version is absolute and opts out (see isVersionPinned).
+    if (
+      response.status !== 400 ||
+      isVersionPinned(resolved)
+    ) {
+      return response;
+    }
+    const required = requiredClaudeCodeVersion(await readErrorPayload(response));
+    if (required === undefined || compareVersions(required, version) <= 0) return response;
+    const upgraded = setBillingHeaderVersion(working, required, entrypoint);
+    if (upgraded === null) return response;
+    sessionVersion = required;
+    if (emit) {
+      emit({
+        outcome: "recovered-version",
+        reason: "claude_code_version_too_old",
+        url: hostPath(url),
+        version,
+        required,
+      });
+    }
+    return send(upgraded);
   };
   // Tag the install so a later apply can find and replace it — including from
   // a fresh module instance, where module state would be empty.
