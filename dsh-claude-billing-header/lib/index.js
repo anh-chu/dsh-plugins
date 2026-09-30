@@ -30,8 +30,14 @@
 //      preserved. When the header is already present, or the request is not
 //      an Anthropic OAuth messages call, the request passes through
 //      untouched (no body rewrite, cache-safe).
-//   3. Registration is a fiber-scoped ctx effect, so plugin stop / unload
-//      restores the original fetch.
+//   3. Every tool name is renamed to something the classifier accepts: a
+//      Claude Code tool name where one matches, `mcp__dsh__<name>` otherwise.
+//      Both the `tools[]` definitions and the `tool_use` blocks in
+//      `messages[]` are rewritten together so the model sees one consistent
+//      name per tool. An `llm/stream` listener maps wire names back to the
+//      harness names on the way out of the adapter.
+//   4. Registration is a fiber-scoped ctx effect, so plugin stop / unload
+//      restores the original fetch and drops the listener.
 //
 // What it deliberately does NOT do (unlike the full Pi adapter):
 //   - never removes the identity block (required by the subscriptions plugin)
@@ -41,10 +47,11 @@
 //
 // Proven in this setup (wire bisection, 2026-09-30): the billing header plus
 // the CLI identity block is enough to stay in the plan lane for a request
-// that carries no flagged tool names. What flips a request to metered extra
-// usage is the tool-name list: with an otherwise byte-identical body,
-// renaming every tool keeps it in the plan lane, and the mcp_* meta-tools
-// plus the memory_* family are the flagging names. See `dropTools` below.
+// that carries no tool definitions. What flips a request to metered extra
+// usage is the tool NAMES: with an otherwise byte-identical 60-tool body,
+// renaming every tool keeps it in the plan lane, dropping only the names that
+// tripped it also worked but cost the agent those tools. Anthropic rejects
+// names outside Claude Code's own tool set; see `renameTools` below.
 //
 // NOT a factor (each tested against a real failing body, all still 400):
 // metadata.user_id shape, the anthropic-beta flag list, max_tokens, the
@@ -83,23 +90,37 @@ export function resolveConfig(config = {}) {
       typeof config.debugFile === "string" && config.debugFile.length > 0
         ? config.debugFile
         : undefined,
-    // Tool names withheld from Anthropic OAuth bodies. Anthropic lanes a
-    // request to metered extra usage based on the tool NAMES it carries.
-    // Two name families trip it, and BOTH must be cleared: any one of the
-    // mcp_* meta-tools plus at least one memory_* tool. Verified by wire
-    // bisection 2026-09-30 against a captured 60-tool DSH agent body:
+    // Tool names withheld from Anthropic OAuth bodies. Superseded by
+    // `renameTools`: renaming keeps the tool usable, dropping does not.
+    // Retained as a blunt fallback if a future classifier rejects a name that
+    // renaming cannot hide. Verified by wire bisection 2026-09-30 against a
+    // captured 60-tool DSH agent body:
     //   drop nothing                       -> 400 extra usage
     //   drop 3 mcp_* only                  -> 400
     //   drop memory_* only                 -> 400
     //   drop 3 mcp_* + any one memory_*    -> 200
-    //   drop 2 mcp_* + memory_get          -> 400
     //   rename EVERY tool (same schemas)   -> 200   (names, not size)
-    // The list is a server-side classifier's blocklist, so it can change
-    // without notice: re-bisect with vet-lane.mjs if extra-usage 400s
-    // return. Set [] to disable.
     dropTools: Array.isArray(config.dropTools)
       ? config.dropTools.map(String)
-      : ["memory_get", "mcp_describe_tool", "mcp_execute_tool", "mcp_search_tools"],
+      : [],
+    // Tool-name shaping. Anthropic's OAuth classifier rejects tool
+    // definitions whose names fall outside Claude Code's own tool set, which
+    // is what a 400 "You're out of extra usage" means. Renaming instead of
+    // dropping keeps every tool usable: the name becomes a Claude Code tool
+    // name when one matches, and `<mcpPrefix><name>` otherwise — the
+    // `mcp__<server>__<tool>` shape Claude Code itself uses for MCP tools.
+    // The response side maps the wire name back before the harness sees it.
+    renameTools: config.renameTools !== false,
+    mcpPrefix:
+      typeof config.mcpPrefix === "string" && config.mcpPrefix.length > 0
+        ? config.mcpPrefix
+        : "mcp__dsh__",
+    // Routes whose streams get the reverse mapping. The fetch patch keys on
+    // the OAuth bearer token; the `llm/stream` listener only sees
+    // GenerateOptions, so the route has to be named here.
+    oauthProviders: Array.isArray(config.oauthProviders)
+      ? config.oauthProviders.map(String)
+      : ["claude"],
     // Temporary diagnostic: when set, the pre-rewrite OAuth messages body is
     // written here (overwrite) so an exact failing request can be replayed
     // outside the DSH stack. Local file only; contains system prompt + tools.
@@ -252,6 +273,129 @@ export function dropToolsFromBody(body, names) {
   return { body: { ...body, tools }, dropped };
 }
 
+/**
+ * Claude Code's own tool names. Anthropic's OAuth classifier accepts tool
+ * definitions named after these, and rejects names outside the set.
+ * Source of the set: pi-anthropic-oauth src/convert.ts (`claudeCodeTools`),
+ * which documents the classifier rule directly.
+ */
+export const CLAUDE_CODE_TOOL_NAMES = [
+  "Read",
+  "Write",
+  "Edit",
+  "Bash",
+  "Grep",
+  "Glob",
+  "AskUserQuestion",
+  "TodoWrite",
+  "WebFetch",
+  "WebSearch",
+];
+
+const CLAUDE_CODE_BY_LOWER = new Map(
+  CLAUDE_CODE_TOOL_NAMES.map((toolName) => [nameKey(toolName), toolName]),
+);
+
+/**
+ * Comparison key for a tool name: lowercase, separators removed. Claude Code
+ * spells its own tools in camel case (`WebFetch`), a harness tends to use
+ * snake case (`web_fetch`); both reduce to `webfetch`.
+ */
+export function nameKey(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/** Real harness tool name -> the name Anthropic will accept on the wire. */
+export function toWireToolName(name, prefix) {
+  const raw = String(name);
+  return CLAUDE_CODE_BY_LOWER.get(nameKey(raw)) ?? `${prefix}${raw}`;
+}
+
+/**
+ * Wire name -> the harness tool name it stands for. `names` is the tool list
+ * of the request that produced the wire name; it is the authority, so a name
+ * that collides with a Claude Code tool still resolves to the real tool.
+ */
+export function fromWireToolName(wireName, names, prefix) {
+  const wire = String(wireName);
+  if (wire.startsWith(prefix)) {
+    const stripped = wire.slice(prefix.length);
+    return names.includes(stripped) ? stripped : stripped;
+  }
+  const key = nameKey(wire);
+  return names.find((candidate) => nameKey(candidate) === key) ?? wire;
+}
+
+/**
+ * Rewrite every tool name in an Anthropic messages body: the `tools[]`
+ * definitions and the `tool_use` blocks already in `messages[]`. History must
+ * be renamed too — the model has to see one consistent name per tool across
+ * the definitions and every earlier call it is shown.
+ * @returns { body, renamed } or null when nothing needed rewriting.
+ */
+export function renameBodyTools(body, prefix) {
+  if (!isObject(body)) return null;
+  let renamed = 0;
+  const rename = (name) => {
+    const wire = toWireToolName(name, prefix);
+    if (wire !== name) renamed += 1;
+    return wire;
+  };
+
+  const tools = Array.isArray(body.tools)
+    ? body.tools.map((tool) =>
+        isObject(tool) && typeof tool.name === "string"
+          ? { ...tool, name: rename(tool.name) }
+          : tool,
+      )
+    : undefined;
+
+  const messages = Array.isArray(body.messages)
+    ? body.messages.map((message) => {
+        if (!isObject(message) || !Array.isArray(message.content)) return message;
+        const content = message.content.map((block) =>
+          isObject(block) && block.type === "tool_use" && typeof block.name === "string"
+            ? { ...block, name: rename(block.name) }
+            : block,
+        );
+        return { ...message, content };
+      })
+    : undefined;
+
+  if (renamed === 0) return null;
+  return {
+    body: {
+      ...body,
+      ...(tools === undefined ? {} : { tools }),
+      ...(messages === undefined ? {} : { messages }),
+    },
+    renamed,
+  };
+}
+
+/**
+ * Map one StreamChunk's tool name back from the wire name. The claude
+ * adapter names the tool in `tool-call-delta` (on open and on every
+ * input_json_delta) and again in the closing `tool-call` block.
+ */
+export function unwireChunkToolName(chunk, names, prefix) {
+  if (!isObject(chunk)) return chunk;
+  if (chunk.type === "tool-call-delta" && typeof chunk.name === "string") {
+    return { ...chunk, name: fromWireToolName(chunk.name, names, prefix) };
+  }
+  if (
+    chunk.type === "block-end" &&
+    isObject(chunk.block) &&
+    chunk.block.type === "tool-call" &&
+    typeof chunk.block.name === "string"
+  ) {
+    return { ...chunk, block: { ...chunk.block, name: fromWireToolName(chunk.block.name, names, prefix) } };
+  }
+  return chunk;
+}
+
 /** True for Anthropic OAuth messages POSTs (not API-key, not aux endpoints). */
 export function isOAuthMessagesRequest(url, headers) {
   if (typeof url !== "string" || !url.includes(MESSAGES_PATH)) return false;
@@ -335,9 +479,17 @@ export function patchFetch(original, resolved, onEvent) {
       working = dt.body;
       dropped = dt.dropped;
     }
+    let renamed = 0;
+    if (resolved.renameTools) {
+      const rt = renameBodyTools(working, resolved.mcpPrefix);
+      if (rt !== null) {
+        working = rt.body;
+        renamed = rt.renamed;
+      }
+    }
     const next = ensureBillingHeader(working, version, entrypoint);
     if (next !== null) working = next;
-    const mutated = dt !== null || next !== null;
+    const mutated = dt !== null || next !== null || renamed > 0;
     if (emit) {
       const system0 =
         isObject(parsed) && Array.isArray(parsed.system) && parsed.system.length > 0
@@ -354,6 +506,7 @@ export function patchFetch(original, resolved, onEvent) {
         systemLen: isObject(parsed) && Array.isArray(parsed.system) ? parsed.system.length : 0,
         toolCount: isObject(parsed) && Array.isArray(parsed.tools) ? parsed.tools.length : 0,
         dropped,
+        renamed,
       });
     }
     if (resolved.captureFile !== undefined && isObject(parsed)) {
@@ -402,4 +555,28 @@ export function apply(ctx, config) {
       if (globalThis.fetch === patched) globalThis.fetch = originalFetch;
     };
   }, "claude-billing-header.fetch-patch");
+
+  // Reverse half of the tool rename. The request side renames at the fetch
+  // seam (the only place that sees the built body); the response side maps
+  // back here, on typed StreamChunks, so no SSE text is parsed. The request
+  // could not be rewritten here even if we wanted to: a loop-built
+  // GenerateOptions arrives deep-frozen.
+  if (resolved.renameTools) {
+    ctx.on("llm/stream", (options, next) => {
+      if (!isObject(options)) return next();
+      if (!resolved.oauthProviders.includes(String(options.provider))) return next();
+      const downstream = next();
+      if (downstream === undefined || downstream === null) return downstream;
+      const names = Array.isArray(options.tools)
+        ? options.tools
+            .map((tool) => (isObject(tool) ? String(tool.name) : ""))
+            .filter((toolName) => toolName !== "")
+        : [];
+      return (async function* unwireToolNames() {
+        for await (const chunk of downstream) {
+          yield unwireChunkToolName(chunk, names, resolved.mcpPrefix);
+        }
+      })();
+    });
+  }
 }

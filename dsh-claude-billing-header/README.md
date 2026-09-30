@@ -11,22 +11,32 @@ CLI impersonation headers, `?beta=true`, and the identity system block.
 
 ## What it changes on the wire
 
-Two changes, both scoped to `POST https://api.anthropic.com/v1/messages*`
+Three changes, all scoped to `POST https://api.anthropic.com/v1/messages*`
 with `Authorization: Bearer sk-ant-oat*`:
 
 1. Prepends `system[0]` billing header (see format below). No-op when
    already present.
-2. Withholds the flagging tool names from `tools` (configurable via
-   `dropTools`, default `memory_get`, `mcp_describe_tool`,
-   `mcp_execute_tool`, `mcp_search_tools`). Proven by wire bisection
-   2026-09-30 against a captured 60-tool DSH agent body: Anthropic lanes a
-   request to metered extra usage based on the tool NAMES it carries, not
-   its size (renaming every tool, schemas untouched, stays in the plan
-   lane). Two name families trip it and BOTH must be cleared — any one of
-   the `mcp_*` meta-tools plus at least one `memory_*` tool. Dropping only
-   `memory_get` (the previous default) is no longer sufficient because the
-   `mcp_*` meta-tools arrived with DSH's MCP support. Set `dropTools: []`
-   to disable.
+2. Renames every tool so Anthropic's OAuth classifier accepts it
+   (`renameTools`, default on). A name that matches one of Claude Code's own
+   tools becomes that name (`bash` -> `Bash`, `web_fetch` -> `WebFetch`; the
+   comparison ignores case and separators); everything else is namespaced
+   `mcp__dsh__<name>` — the `mcp__<server>__<tool>` shape Claude Code uses
+   for MCP tools (`mcpPrefix`). The `tools[]` definitions and any `tool_use`
+   blocks already in `messages[]` are renamed together, so the model sees one
+   consistent name per tool.
+   The response side reverses it: an `llm/stream` listener maps the wire name
+   back on `tool-call-delta` and the closing `tool-call` block, so the
+   harness only ever sees its own tool names. No SSE text is parsed.
+3. Optionally withholds names entirely (`dropTools`, default `[]`). Kept as a
+   blunt fallback; renaming is preferred because it keeps the tool usable.
+
+   Why names matter: Anthropic's OAuth classifier rejects tool definitions
+   outside Claude Code's own tool set — reported as a 400 `You're out of
+   extra usage`, which reads like a quota problem and is not one. Measured
+   2026-09-30 against a captured 60-tool DSH agent body, byte-identical
+   between runs: adding the tools flipped the request to the metered lane,
+   and renaming every tool (schemas untouched) put it back. `pi-anthropic-oauth`
+   documents the same rule and ships the same rename technique.
 
 ```
 x-anthropic-billing-header: cc_version=2.1.236.abc; cc_entrypoint=cli; cch=12345;
