@@ -76,23 +76,33 @@ const evalIn = async (expression) => {
 console.log('target', targetId, '->', target);
 console.log('\n=== url ===\n' + (await evalIn('location.href')));
 console.log('\n=== page text ===\n' + String(await evalIn('document.body.innerText.slice(0,2000)')));
+console.log('\n=== expected client modules (__DSH_BOOT__.entries) ===\n' + String(await evalIn(
+  `(function(){const b=window.__DSH_BOOT__;` +
+  `if(!b||!Array.isArray(b.entries))return '(no __DSH_BOOT__.entries)';` +
+  `const m=${JSON.stringify(process.env.MATCH || '')};` +
+  `const ids=b.entries.map(e=>e.id);` +
+  `const hit=m?b.entries.filter(e=>JSON.stringify(e).includes(m)):[];` +
+  `return JSON.stringify({count:ids.length,ids:ids,matched:hit},null,1).slice(0,3000)})()`
+)));
 console.log('\n=== boot card ===\n' + String(await evalIn(
   `(function(){const el=document.querySelector('[data-dsh-boot]');return el?el.textContent.replace(/\\s+/g,' ').slice(0,800):'(none — shell booted)'})()`
 )));
-console.log('\n=== client module manifest (one entry) ===\n' + String(await evalIn(
-  `(function(){const b=window.__DSH_BOOT__,m=${JSON.stringify(process.env.MATCH || '')};` +
-  `if(!b||!b.entries)return '(no __DSH_BOOT__.entries)';` +
-  `const e=m?b.entries.find(x=>JSON.stringify(x).includes(m)):void 0;` +
-  `return JSON.stringify(e||b.entries[0]).slice(0,400)})()`
-)));
 console.log('\n=== errors captured in page ===\n' + String(await evalIn('JSON.stringify(window.__probeErrors || [], null, 1).slice(0,4000)')));
+console.log('\n=== module registration failures ===\n' + String(await evalIn(
+  `(function(){const out=[];const push=(s)=>{if(s&&out.length<20)out.push(String(s).slice(0,400))};` +
+  `for(const e of (window.__probeErrors||[]))if(/without registering|could not load|client-modules/i.test(e))push(e);` +
+  `return out.length?out.join('\\n'):'(none captured — if the boot card names a failed entry, capture the console with ALL=1)'})()`
+)));
 
 console.log('\n=== console / exception events ===');
 for (const e of events) {
   const p = e.params || {};
   if (e.method === 'Runtime.consoleAPICalled') {
     const text = (p.args || []).map((a) => a.value ?? a.description ?? a.type).join(' ');
-    if (process.env.ALL || /probe|fail|error|missing|cannot|undefined/i.test(text)) {
+    // The module system names the two fatal causes outright ("loaded without
+    // registering", "could not load"), and neither contains the word "error",
+    // so they are matched explicitly rather than left to the generic filter.
+    if (process.env.ALL || /probe|fail|error|missing|cannot|undefined|client-modules|without registering|could not load/i.test(text)) {
       console.log(`[console.${p.type}] ${text.slice(0, 1500)}`);
     }
   } else if (e.method === 'Runtime.exceptionThrown') {
