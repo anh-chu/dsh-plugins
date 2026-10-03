@@ -28,6 +28,18 @@ assert.ok(!/[\u4e00-\u9fff]/.test(section("genui:fence").text), "genui:fence is 
 assert.equal(section("other:section").text, "left alone", "unrelated sections untouched");
 assert.equal(section("mystery:section").text, "这个段落仍是中文", "audited section is not silently rewritten");
 
+// The plugin must never remove context: same section count, same names, same
+// order, and no section dropped — it only rewrites text in place.
+assert.equal(out.sections.length, assembly.sections.length, "no section is added or removed");
+assert.deepEqual(
+	out.sections.map((s) => s.name),
+	assembly.sections.map((s) => s.name),
+	"section names and order are unchanged"
+);
+for (const untouched of ["contexts", "tools", "variables"]) {
+	assert.deepEqual(out[untouched], assembly[untouched], `${untouched} are passed through untouched`);
+}
+
 // The contract the section must keep teaching, spot-checked.
 for (const needle of ["Default to UI", "validate_dsh_ui", "panel:true", "Secrets ban", "LOCAL-FIRST", "dsh-ui"]) {
 	assert.ok(section("genui:fence").text.includes(needle), `translated section keeps "${needle}"`);
