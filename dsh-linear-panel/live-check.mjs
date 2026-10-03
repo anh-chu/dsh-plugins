@@ -42,8 +42,9 @@ async function gql(label, query, variables) {
 }
 
 const ISSUE_NODES = `{
-  nodes { id identifier title url priority
-    assignee { name } state { id name type } team { key name } updatedAt } }`;
+  nodes { id identifier title url priority parent { id identifier }
+    assignee { name } state { id name type } team { key name } updatedAt
+    children { nodes { id state { type } } } } }`;
 
 const Q = {
   teams: `{ teams { nodes { id key name } } }`,
@@ -55,6 +56,8 @@ const Q = {
       id identifier title description url priority
       state { id name type } team { id key name }
       assignee { id name }
+      parent { id identifier title }
+      children { nodes { id identifier title state { id name type } assignee { name } } }
       labels { nodes { id name } }
       comments(first: 50, orderBy: createdAt) { nodes { id body user { name } createdAt } }
       createdAt updatedAt
@@ -81,10 +84,11 @@ function listQuery(search, teamId) {
       searchIssues(term: $term, ${team} first: 50, orderBy: updatedAt) ${ISSUE_NODES}
     }`, variables];
   }
-  const filter = teamId ? 'filter: { team: { id: { eq: $teamId } } },' : '';
+  const parts = ['parent: { null: true }'];
+  if (teamId) parts.push('team: { id: { eq: $teamId } }');
   const decl = teamId ? '($teamId: ID)' : '';
   return [`query${decl} {
-    issues(${filter} first: 50, orderBy: updatedAt) ${ISSUE_NODES}
+    issues(filter: { ${parts.join(', ')} }, first: 50, orderBy: updatedAt) ${ISSUE_NODES}
   }`, teamId ? { teamId } : {}];
 }
 
@@ -117,6 +121,23 @@ if (issueId) {
   if (detail?.issue?.identifier) ok(`detail loaded ${detail.issue.identifier}`);
 } else {
   fail('no issues returned — detail query untested');
+}
+
+// Parent/sub-issue relation: the browse list must contain no child issues, and
+// a child reached from its parent must report that same parent back.
+const nodes = listData?.issues?.nodes ?? [];
+nodes.every((n) => n.parent === null)
+  ? ok(`browse list is parentless (${nodes.length} issues)`)
+  : fail('browse list contains sub-issues');
+const withKids = nodes.find((n) => (n.children?.nodes ?? []).length > 0);
+if (withKids) {
+  ok(`parent row carries children (${withKids.identifier}: ${withKids.children.nodes.length})`);
+  const childDetail = await gql('child detail', Q.detail, { id: withKids.children.nodes[0].id });
+  childDetail?.issue?.parent?.identifier === withKids.identifier
+    ? ok(`child ${childDetail.issue.identifier} reports parent ${withKids.identifier}`)
+    : fail(`child parent link (got ${JSON.stringify(childDetail?.issue?.parent ?? null)})`);
+} else {
+  fail('no issue with children — parent/sub-issue relation untested');
 }
 
 // Mutation signatures against a non-existent id: entity errors pass, validation fails.

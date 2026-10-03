@@ -205,10 +205,11 @@ window.__ModuleLoader__.load({
       return data.data;
     }
 
-    // Shared node selection for list rows (used by both issues and issueSearch).
+    // Shared node selection for list rows (issues and searchIssues alike).
     const ISSUE_NODES = `{
-      nodes { id identifier title url priority
-        assignee { name } state { id name type } team { key name } updatedAt } }`;
+      nodes { id identifier title url priority parent { id identifier }
+        assignee { name } state { id name type } team { key name } updatedAt
+        children { nodes { id state { type } } } } }`;
 
     // team(id:) takes String!, the filter comparator takes ID: declare per use.
     const Q = {
@@ -221,6 +222,8 @@ window.__ModuleLoader__.load({
           id identifier title description url priority
           state { id name type } team { id key name }
           assignee { id name }
+          parent { id identifier title }
+          children { nodes { id identifier title state { id name type } assignee { name } } }
           labels { nodes { id name } }
           comments(first: 50, orderBy: createdAt) {
             nodes { id body user { name } createdAt }
@@ -254,6 +257,10 @@ window.__ModuleLoader__.load({
      * List query. Linear deprecated `issueSearch`; `searchIssues(term:)` is
      * the live endpoint (its teamId arg is String, the issues filter comparator
      * is ID — declare variables per branch or GraphQL rejects them as unused).
+     *
+     * The browse list filters `parent: { null: true }`, so sub-issues nest
+     * under their parent instead of appearing as peers; search stays flat, so a
+     * sub-issue is still findable by name.
      */
     function listQuery(search, teamId) {
       if (search) {
@@ -265,10 +272,11 @@ window.__ModuleLoader__.load({
           searchIssues(term: $term, ${team} first: 50, orderBy: updatedAt) ${ISSUE_NODES}
         }`, variables];
       }
-      const filter = teamId ? 'filter: { team: { id: { eq: $teamId } } },' : '';
+      const parts = ['parent: { null: true }'];
+      if (teamId) parts.push('team: { id: { eq: $teamId } }');
       const decl = teamId ? '($teamId: ID)' : '';
       return [`query${decl} {
-        issues(${filter} first: 50, orderBy: updatedAt) ${ISSUE_NODES}
+        issues(filter: { ${parts.join(', ')} }, first: 50, orderBy: updatedAt) ${ISSUE_NODES}
       }`, teamId ? { teamId } : {}];
     }
 
@@ -307,6 +315,8 @@ window.__ModuleLoader__.load({
     function IssueRow({ issue, selected, onOpen }) {
       const tone = STATE_TONE[issue.state?.type] ?? T.muted;
       const priority = issue.priority ?? 0;
+      const kids = issue.children?.nodes ?? [];
+      const kidsDone = kids.filter((k) => k.state?.type === 'completed' || k.state?.type === 'canceled').length;
       return h('button', {
         type: 'button',
         onClick: () => onOpen(issue.id),
@@ -322,6 +332,7 @@ window.__ModuleLoader__.load({
       h('span', { style: { fontSize: 13, flex: 1, minWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: issue.title }, issue.title),
       issue.assignee?.name ? h('span', { style: { fontSize: 11, color: T.muted, whiteSpace: 'nowrap' } }, issue.assignee.name) : null,
       priority > 0 ? badge(PRIORITY[priority], priority === 1 ? T.warn : T.muted) : null,
+      kids.length ? badge(`${kidsDone}/${kids.length}`, T.muted) : null,
       badge(issue.state?.name ?? '—', tone),
       );
     }
@@ -333,10 +344,12 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function IssueDetail({ issue, states, viewer, linkBase, busy, onAction, onBack }) {
+    function IssueDetail({ issue, states, viewer, linkBase, busy, onAction, onBack, onOpenIssue }) {
       const [comment, setComment] = React.useState('');
       const [posting, setPosting] = React.useState(false);
       const mine = viewer && issue.assignee?.id === viewer.id;
+      const kids = issue.children?.nodes ?? [];
+      const kidsDone = kids.filter((k) => k.state?.type === 'completed' || k.state?.type === 'canceled').length;
 
       const postComment = async () => {
         const body = comment.trim();
@@ -364,6 +377,17 @@ window.__ModuleLoader__.load({
           h('a', { href: issue.url, target: '_blank', rel: 'noreferrer', style: { fontSize: 11, color: T.brand, textDecoration: 'none' } }, 'open ↗'),
         ),
         h('div', { style: { flex: 1, overflow: 'auto', padding: '14px 16px' } },
+          issue.parent
+            ? h('button', {
+                type: 'button',
+                onClick: () => onOpenIssue(issue.parent.id),
+                title: issue.parent.title ?? '',
+                style: {
+                  ...BUTTON, padding: '2px 8px', fontSize: 11, marginBottom: 8,
+                  color: T.muted, borderColor: T.border,
+                },
+              }, `↑ ${issue.parent.identifier}`)
+            : null,
           h('div', { style: { fontSize: 15, fontWeight: 600, lineHeight: 1.35, marginBottom: 12 } }, issue.title),
 
           h(DetailSection, { label: 'Status' },
@@ -397,6 +421,32 @@ window.__ModuleLoader__.load({
             ? h(DetailSection, { label: 'Labels' },
                 h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
                   ...issue.labels.nodes.map((l) => badge(l.name, T.muted))))
+            : null,
+          kids.length
+            ? h(DetailSection, { label: `Sub-issues (${kidsDone}/${kids.length})` },
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+                  ...kids.map((kid) => h('button', {
+                    key: kid.id,
+                    type: 'button',
+                    onClick: () => onOpenIssue(kid.id),
+                    style: {
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                      textAlign: 'left', cursor: 'pointer', font: 'inherit', color: T.text,
+                      background: T.bg, border: `1px solid ${T.border}`,
+                      borderRadius: 8, padding: '6px 8px',
+                    },
+                  },
+                  h('span', { style: { fontSize: 11, color: T.muted, fontFamily: 'ui-monospace, monospace' } }, kid.identifier),
+                  h('span', {
+                    style: {
+                      fontSize: 12, flex: 1, minWidth: 60, overflow: 'hidden',
+                      textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    },
+                    title: kid.title,
+                  }, kid.title),
+                  kid.assignee?.name ? h('span', { style: { fontSize: 11, color: T.muted, whiteSpace: 'nowrap' } }, kid.assignee.name) : null,
+                  badge(kid.state?.name ?? '—', STATE_TONE[kid.state?.type] ?? T.muted),
+                  ))))
             : null,
           h(DetailSection, { label: 'Description' },
             h('div', {
@@ -627,6 +677,7 @@ window.__ModuleLoader__.load({
           busy,
           onAction: onDetailAction,
           onBack: closeDetail,
+          onOpenIssue: openIssue,
         });
 
       return h('div', {
