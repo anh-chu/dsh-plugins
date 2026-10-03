@@ -43,24 +43,27 @@ Host-only plugin that keeps model-facing system-prompt sections in English. It h
 
 ## Install
 
-In `~/.dsh/profiles/web/package.json`:
+Each subfolder is an independent bundle. In `~/.dsh/profiles/web/package.json`, the plugins that
+are installed from this repo:
 
 ```json
 {
   "dependencies": {
-    "dsh-wenlan": "file:/path/to/dsh-plugins/dsh-wenlan",
-    "dsh-session-model-badge": "file:/path/to/dsh-plugins/dsh-session-model-badge",
-    "dsh-wiki-viewer": "file:/path/to/dsh-plugins/dsh-wiki-viewer",
+    "dsh-advisor-plugin": "file:/path/to/dsh-plugins/dsh-advisor-plugin",
+    "dsh-bridge": "file:/path/to/dsh-plugins/dsh-bridge",
+    "dsh-claude-billing-header": "file:/path/to/dsh-plugins/dsh-claude-billing-header",
+    "dsh-mobile-harden": "file:/path/to/dsh-plugins/dsh-mobile-harden",
     "dsh-plugin-message-edit": "file:/path/to/dsh-plugins/dsh-plugin-message-edit",
-    "@local/dsh-linear": "file:/path/to/dsh-plugins/dsh-linear-panel",
-    "@local/dsh-prompt-english": "file:/path/to/dsh-plugins/dsh-prompt-english"
+    "@local/dsh-linear": "link:/path/to/dsh-plugins/dsh-linear-panel",
+    "@local/dsh-prompt-english": "link:/path/to/dsh-plugins/dsh-prompt-english"
   },
   "dsh": {
     "profile": {
       "bundles": [
-        "dsh-wenlan",
-        "dsh-session-model-badge",
-        "dsh-wiki-viewer",
+        "dsh-advisor-plugin",
+        "dsh-bridge",
+        "dsh-claude-billing-header",
+        "dsh-mobile-harden",
         "dsh-plugin-message-edit",
         "@local/dsh-linear",
         "@local/dsh-prompt-english"
@@ -70,7 +73,29 @@ In `~/.dsh/profiles/web/package.json`:
 }
 ```
 
-Note: `dsh-wenlan/cordis.patch.yml` contains absolute local paths (`/home/sil/...`). Adjust `command` and `args` to your machine before use.
+`file:` copies the folder into the profile — pnpm hard-links the files, so an edit that rewrites a
+file breaks the link and leaves the installed copy stale with no signal, which is the deployment
+caveat called out per-plugin above. `link:` symlinks the folder instead, so edits here are live;
+the two `@local/*` packages use it for exactly that reason. Prefer `link:` for a folder you author
+in this repo and `file:` for a fork you vendor.
+
+### Installed, but not from this repo
+
+Verified against the live profile on 2026-10-03:
+
+| Package | Live specifier | Note |
+| --- | --- | --- |
+| `dsh-session-model-badge` | `file:/home/sil/dsh-session-model-badge` | duplicate copy outside the repo; the repo copy is byte-identical (`diff -rq`) |
+| `dsh-wiki-viewer` | `file:/home/sil/guppi/dsh-wiki-viewer` | duplicate copy outside the repo; the repo copy is byte-identical |
+| `@opencode2dsh/dsh-plugin` | `file:~/.dsh/dsh-plugins/opencode2dsh-dsh-plugin-0.3.3-pr25-fix5.tgz` | packed tarball, not the `dsh-opencode2dsh/` folder |
+| `dsh-wenlan` | not a dependency | documented below and present in this repo, but not installed in this profile |
+
+The two duplicate paths predate the monorepo and are the ones the profile actually loads. Pointing
+them at the repo copies would make this repo the single source of truth, but it is a live-profile
+change: it needs `pnpm install` (never mid-turn — it rewrites hoisted `node_modules` and can break
+lazy imports until a restart) and then a `dsh web` restart.
+
+Note: if you do install `dsh-wenlan`, its `cordis.patch.yml` contains absolute local paths (`/home/sil/...`). Adjust `command` and `args` to your machine before use.
 
 ## Patches (third-party fixes, pnpm `patchedDependencies` pattern)
 
