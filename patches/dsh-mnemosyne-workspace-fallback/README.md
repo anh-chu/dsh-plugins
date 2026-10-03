@@ -121,3 +121,32 @@ cd ~/.dsh/profiles/web && pnpm install
 
 **A `dsh web` restart is required** — the provider reads its scope resolution at
 load time, so installing alone leaves the running process on the old code.
+
+### Composing it with `dsh-mnemosyne-memoria-counts`
+
+pnpm keys a patch by `package@version`, so two fixes for `dsh-mnemosyne@0.8.1` cannot be
+installed as two files — the profile's `patches/dsh-mnemosyne@0.8.1.patch` has to be the
+composition of both. `dsh-mnemosyne@0.8.1.combined.patch` in this folder is that
+composition, and it is what the live web profile installs.
+
+Generate it from **pristine** upstream. Composing from an already-patched copy is the trap:
+the first patch rejects as already-applied, `patch(1)` leaves a `src/index.js.rej` behind,
+and the diff you then take is missing that fix:
+
+```sh
+# a = pristine upstream (reverse the installed patch out of a copy of the live source)
+mkdir -p /tmp/c/a /tmp/c/b
+cp -r ~/.dsh/profiles/web/node_modules/dsh-mnemosyne/src /tmp/c/a/src
+(cd /tmp/c/a && git apply -R -p1 .../dsh-mnemosyne-memoria-counts/dsh-mnemosyne@0.8.1.patch)
+
+# b = pristine + both fixes
+cp -r /tmp/c/a/src /tmp/c/b/src
+(cd /tmp/c/b && git apply -p1 .../dsh-mnemosyne-memoria-counts/dsh-mnemosyne@0.8.1.patch)
+(cd /tmp/c/b && git apply -p1 .../dsh-mnemosyne-workspace-fallback/dsh-mnemosyne@0.8.1.patch)
+
+# the directories are named a/ and b/, so --no-prefix yields the a/… b/… headers pnpm wants
+cd /tmp/c && git diff --no-index --no-prefix a b > combined.patch
+```
+
+Verified: the composition applies cleanly to pristine upstream, and that build passes both
+suites — 17 assertions for the dashboard fix, 13 for this one.
