@@ -77,6 +77,16 @@ in 0.21.1): `/sidebar/file` rejected workspace-relative paths with
 realpath + `isWithin` fence still blocks escapes (403). See the folder README
 for install. Already applied to the live web profile.
 
+### `patches/dsh-mnemosyne-memoria-counts/`
+Fixes `dsh-mnemosyne` 0.8.1 rendering its whole MEMORIA dashboard section as zeros:
+Overview, Facts, Timelines, Instructions, KG and Preferences all report 0 and every tab plus Top
+Sessions says "no data", however much the database holds (71 `memoria_facts` / 35 `memoria_instructions`
+on the machine where this was found). The adapter's table allow-list omits all six `memoria_*` tables,
+and its readers return 0/empty for anything outside the set — `count_rows()` is literally
+`... if table in TABLES else 0`. One-line fix, no client changes needed. `node
+test/memoria-counts.test.mjs` fails 11 of 17 assertions on unpatched 0.8.1 and passes with the patch.
+See the folder README for install — **it needs a `dsh web` restart to take effect.**
+
 ## Skills
 
 Global agent skills that belong with the plugins they explain. DSH loads them from

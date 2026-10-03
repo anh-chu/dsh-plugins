@@ -1,0 +1,19 @@
+diff --git a/src/index.js b/src/index.js
+index 669110b..dda7ab9 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -950,7 +950,13 @@ MEMORY_COLUMNS = (
+ )
+ 
+ def tables_present():
+-    allowed = ("working_memory", "episodic_memory", "memories", "triples", "consolidation_log")
++    # memoria_* tables back the MEMORIA panel (modes memoria_stats /
++    # memoria_list). Leaving them out of this allow-list made count_rows()
++    # short-circuit to 0 for every one of them, so the panel rendered zeros
++    # and "no data" regardless of what the database actually held.
++    allowed = ("working_memory", "episodic_memory", "memories", "triples", "consolidation_log",
++               "memoria_facts", "memoria_timelines", "memoria_instructions",
++               "memoria_preferences", "memoria_kg", "memoria_persona")
+     placeholders = ",".join("?" for _ in allowed)
+     return {row[0] for row in connection.execute(
+         "SELECT name FROM sqlite_master WHERE type='table' AND name IN (" + placeholders + ")", allowed
