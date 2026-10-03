@@ -117,6 +117,19 @@ and its readers return 0/empty for anything outside the set — `count_rows()` i
 test/memoria-counts.test.mjs` fails 11 of 17 assertions on unpatched 0.8.1 and passes with the patch.
 See the folder README for install — **it needs a `dsh web` restart to take effect.**
 
+### `patches/dsh-mnemosyne-workspace-fallback/`
+Makes `dsh-mnemosyne` 0.8.1 workspace mode usable. Two scope-resolution defects made memory silently
+disappear: an unbound target (`{mode:"unbound"}`) skips auto-capture writes and makes the pre-step
+prefetch decline to inject, with nothing logged, and the bind flow refuses to bind `$HOME`, so a
+`$HOME`-rooted session could never have memory at all; and identity was marker-only with no
+inheritance, so every directory needed its own `.mnemosyne-id` and any directory without one was dead.
+The patch makes unbound fall back to the shared pool, and auto-binds the enclosing **git repository**
+keyed by its canonical path, so a project isolates itself without the plugin writing a marker into the
+user's repo (an explicit marker still wins; the filesystem root and `os.tmpdir()` are refused, because a
+stray `/tmp/.git` otherwise makes every scratch directory look like a project).
+`node test/fallback-and-autobind.test.mjs` fails 7 of 12 assertions on upstream and passes 13 with the
+patch. See the folder README for install — **it needs a `dsh web` restart to take effect.**
+
 ## Skills
 
 Global agent skills that belong with the plugins they explain. DSH loads them from

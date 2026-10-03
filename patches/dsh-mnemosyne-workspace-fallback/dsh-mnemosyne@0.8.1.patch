@@ -1,0 +1,120 @@
+diff --git a/src/identity.js b/src/identity.js
+index 72bc557..ce0d373 100644
+--- a/src/identity.js
++++ b/src/identity.js
+@@ -3,9 +3,11 @@
+  *
+  * This module is the pure, host-independent face of the workspace-scope design
+  * (docs/design-workspace-memory-scope.md §5.2/§5.3/§6). Identity is determined
+- * solely by the project-root `.mnemosyne-id` marker — no automatic git/path
+- * derivation, no silent degradation. An unbound workspace is an explicit state
+- * the caller surfaces (bind hint) rather than something quietly remapped.
++ * by the project-root `.mnemosyne-id` marker when one is present, and otherwise
++ * by the enclosing git repository's canonical path. The marker still wins; the
++ * repository fallback exists so a project auto-binds without this plugin writing
++ * a file into the user's repo. A directory inside no repository stays unbound,
++ * and the caller then falls back to the shared pool.
+  *
+  * No DSH host services are required, so the whole module is testable in
+  * node:test without a running harness.
+@@ -17,7 +19,7 @@
+ import { createHash } from "node:crypto";
+ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+ import { basename, dirname, join, resolve } from "node:path";
+-import { homedir } from "node:os";
++import { homedir, tmpdir } from "node:os";
+ 
+ /** Default mnemosyne dataDir (~/.dsh/mnemosyne). */
+ export const DEFAULT_DATA_DIR = join(homedir(), ".dsh", "mnemosyne");
+@@ -91,6 +93,33 @@ export function findMarker(startDir) {
+   return readMarkerAt(resolve(startDir));
+ }
+ 
++/**
++ * Nearest enclosing git repository root, or null when there is none.
++ *
++ * Used only as a fallback for workspace identity when no `.mnemosyne-id` marker
++ * is present: the repository root is the natural project boundary, and keying on
++ * its canonical path gives a project its own namespace WITHOUT writing a marker
++ * file into the user's repository. A `.git` *file* (worktree or submodule) counts
++ * as a root just as a `.git` directory does.
++ *
++ * The filesystem root and the system temp dir are never accepted as projects.
++ * A stray `/tmp/.git` is enough to make every scratch directory look like a
++ * repository, and binding "the temp dir" as a workspace boundary is nonsense.
++ */
++export function findGitRoot(startDir) {
++  if (typeof startDir !== "string" || !startDir) return null;
++  const refused = new Set([resolve("/"), resolve(tmpdir())]);
++  let dir = resolve(startDir);
++  for (let depth = 0; depth < 32; depth += 1) {
++    if (refused.has(dir)) return null;
++    if (existsSync(join(dir, ".git"))) return dir;
++    const parent = dirname(dir);
++    if (parent === dir) return null;
++    dir = parent;
++  }
++  return null;
++}
++
+ /** Filesystem-canonicalize a path (resolve symlinks) or return null. */
+ export function canonicalize(p) {
+   try {
+@@ -302,6 +331,40 @@ export function resolveMemoryContext({ cwd, sessionId, config, dataDir }) {
+   // Workspace mode.
+   const identity = resolveIdentity({ cwd });
+   if (!identity) {
++    // No marker. Fall back to the enclosing git repository, keyed by its
++    // canonical path, so working inside a project auto-binds it without dropping
++    // a marker file into the user's repo. An explicit `.mnemosyne-id` still takes
++    // precedence; a directory in no repository stays unbound, and the caller
++    // (resolveTargetUncached) then falls back to the shared pool.
++    const gitRoot = findGitRoot(cwd);
++    if (gitRoot) {
++      const canonicalRoot = canonicalize(gitRoot) ?? gitRoot;
++      const gitKey = `path:${canonicalRoot}`;
++      const known = findWorkspaceEntry(loadIdentityMap(dataDir ?? DEFAULT_DATA_DIR), gitKey);
++      if (known?.namespace) {
++        return {
++          mode: "workspace",
++          namespace: known.namespace,
++          identityKey: gitKey,
++          source: "git",
++          displayName: known.displayName ?? basename(canonicalRoot),
++          bound: true,
++        };
++      }
++      const { entry: created } = upsertWorkspaceEntry(dataDir ?? DEFAULT_DATA_DIR, {
++        identityKey: gitKey,
++        displayName: basename(canonicalRoot),
++        canonicalPath: canonicalRoot,
++      });
++      return {
++        mode: "workspace",
++        namespace: created.namespace,
++        identityKey: gitKey,
++        source: "git",
++        displayName: created.displayName ?? basename(canonicalRoot),
++        bound: true,
++      };
++    }
+     return {
+       mode: "workspace",
+       namespace: null,
+diff --git a/src/index.js b/src/index.js
+index dda7ab9..60bbaa1 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -2266,7 +2266,11 @@ export function apply(ctx, config) {
+         dataDir: expandPath(runtimeCfg().dataDir),
+       });
+       if (mctx.bound && mctx.namespace) return { mode: "scoped", sid: mctx.namespace };
+-      return { mode: "unbound", reason: mctx.reason ?? "unbound" };
++      // Unbound directory in workspace mode. Fall back to the shared pool rather
++      // than declining: "unbound" made every directory without its own marker —
++      // $HOME included, which the bind flow refuses to bind — memory-less, with
++      // writes skipped and the prefetch silently injecting nothing.
++      return { mode: "default" };
+     }
+     return { mode: "scoped", sid: sidFor(session) };
+   };
