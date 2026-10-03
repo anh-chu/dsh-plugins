@@ -1,0 +1,7 @@
+# Local plugin: keeps model-facing prompt sections in English.
+# Replaces named system-prompt sections with English text from this directory
+# and reports any other section that still carries Chinese characters.
+- insert:
+    - id: prompt-english
+      name: '@local/dsh-prompt-english'
+      config: {}
