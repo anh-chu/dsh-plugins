@@ -1,8 +1,11 @@
 // Runnable check: the assembly waterfall replaces the genui:fence section with
 // English, leaves other sections alone, and audits untranslated CJK sections.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { apply } from "./index.js";
+
+const replacement = readFileSync(new URL("./genui-section.md", import.meta.url), "utf8");
 
 const listeners = new Map();
 apply({ on: (event, handler) => listeners.set(event, handler) });
@@ -48,4 +51,20 @@ for (const needle of ["Default to UI", "validate_dsh_ui", "panel:true", "Secrets
 const log = readFileSync(`${process.env.DSH_HOME ?? `${process.env.HOME}/.dsh`}/logs/prompt-english.log`, "utf8");
 assert.ok(log.includes("mystery:section"), "audit logged the untranslated section");
 
-console.log("ok: genui:fence replaced with English, contract strings intact, CJK audit logged");
+// Deterministic output. Providers cache a request prefix, so a section that
+// varied per turn would invalidate the cache on every turn. The replacement is
+// a pure function of a file on disk, and must stay that way: no timestamps, no
+// counters, no per-assembly state.
+const hashes = [];
+for (let i = 0; i < 5; i++) {
+	const fresh = { sections: [{ name: "genui:fence", text: "默认就该出 UI" }, { name: "x", text: "stable" }], contexts: [], tools: [], variables: {} };
+	const result = await assemble(fresh, {}, async () => fresh);
+	hashes.push(createHash("sha256").update(JSON.stringify(result.sections)).digest("hex"));
+}
+assert.equal(new Set(hashes).size, 1, "section text must be byte-identical on every assembly");
+
+// Section text is interpolated by the harness AFTER this waterfall, and unknown
+// `{{variable}}` references throw. The replacement must not introduce any.
+assert.ok(!replacement.includes("{{"), "no prompt-variable references that could throw or drift");
+
+console.log("ok: genui:fence replaced with English, contract strings intact, CJK audit logged, output deterministic");
