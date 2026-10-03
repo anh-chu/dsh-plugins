@@ -1,0 +1,4 @@
+# dsh-notepad composition layer: inserts the host plugin row into the composition.
+- insert:
+    - id: dsh-notepad
+      name: dsh-notepad
