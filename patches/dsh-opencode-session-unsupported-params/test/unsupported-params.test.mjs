@@ -34,6 +34,22 @@ sent.length = 0; await f('https://api.openai.com/v1', { body: JSON.stringify({ m
 assert.equal(sent[0].prompt_cache_retention, '24h')
 // 5. Never names a field the body does not contain (no infinite loop / bogus learn).
 assert.equal(rejectedField(400, JSON.stringify({ ...ERR, param: 'nope' }), { model: 'm' }), undefined)
+// 5b. Message-only rejection (no `param`, no "unsupported"): the reasoning_effort 400 seen in subagents.
+const RE = JSON.stringify({ type: 'invalid_request_error', message: 'Upstream request failed: [invalid_request_error] native reasoning control reasoning_effort is not allowed' })
+assert.equal(rejectedField(400, RE, { model: 'm', reasoning_effort: 'high' }), 'reasoning_effort')
+assert.equal(rejectedField(400, RE, { model: 'm' }), undefined)
+// 5c. Core fields are never learned away, and 5xx is ignored.
+assert.equal(rejectedField(400, JSON.stringify({ message: 'model is not supported' }), { model: 'm' }), undefined)
+assert.equal(rejectedField(500, RE, { reasoning_effort: 'high' }), undefined)
+// 5d. Transient field (reasoning_effort): retried without it, but not remembered.
+{
+  const seen = []; const qq = createQuirkStore(undefined)
+  const g = patchFetch(async (u, i) => { const b = JSON.parse(i.body); seen.push(b)
+    return 'reasoning_effort' in b ? new Response(RE, { status: 400 }) : new Response('{}', { status: 200 }) },
+    new AsyncLocalStorage(), resolveBodyRules(), qq)
+  const r2 = await g('https://opencode.ai/x', { body: JSON.stringify({ model: 'glm', reasoning_effort: 'high' }) })
+  assert.equal(r2.status, 200); assert.equal(seen.length, 2); assert.equal(qq.fields('glm').size, 0)
+}
 // 6. Learned entries expire.
 let t = 0; const s = createQuirkStore(undefined, () => t); s.learn('m', 'x'); assert.ok(s.fields('m').has('x'))
 t = 31 * 24 * 3600 * 1000; assert.ok(!s.fields('m').has('x'))

@@ -52,7 +52,7 @@ diff --git a/lib/index.js b/lib/index.js
  }
  
  /** Fire-and-forget append of one debug record; failures only log a warning. */
-@@ -124,28 +157,91 @@
+@@ -124,28 +157,104 @@
    }
  }
  
@@ -81,16 +81,29 @@ diff --git a/lib/index.js b/lib/index.js
 +  }
 +}
 +
-+/** Name the body field an OpenCode 400 rejects as unsupported, else undefined. */
++// Fields that are never learned away: dropping them would break the request itself.
++// Fields OpenCode rejects only on some backends (seen mid-session after many successes): retry without
++// them for this request but never persist, or the model would silently lose reasoning for the TTL.
++const TRANSIENT_FIELDS = new Set(['reasoning_effort', 'reasoning'])
++
++const CORE_FIELDS = new Set(['model', 'messages', 'input', 'stream', 'tools'])
++
++/**
++ * Name the body field an OpenCode 400 rejects, else undefined. Accepts an explicit
++ * `param`, or any top-level body key named as a whole word in a "not supported /
++ * not allowed / unknown" message (e.g. "native reasoning control reasoning_effort is not allowed").
++ */
 +export function rejectedField(status, text, body) {
 +  if (status !== 400) return undefined
 +  let json
 +  try { json = JSON.parse(text) } catch { return undefined }
 +  const err = json?.error && typeof json.error === 'object' ? json.error : json
 +  const message = String(err?.message ?? '')
-+  if (!/unsupported[_ ]parameter|not supported|unknown (parameter|field)|unrecognized/i.test(`${err?.code ?? ''} ${message}`)) return undefined
-+  const named = typeof err?.param === 'string' ? err.param : message.match(/"([A-Za-z_][\w]*)"/)?.[1]
-+  return named && Object.prototype.hasOwnProperty.call(body, named) ? named : undefined
++  if (!/unsupported|not (supported|allowed|permitted)|unknown|unrecognized|invalid (parameter|field)/i.test(`${err?.code ?? ''} ${message}`)) return undefined
++  const has = (k) => Object.prototype.hasOwnProperty.call(body, k) && !CORE_FIELDS.has(k)
++  if (typeof err?.param === 'string' && has(err.param)) return err.param
++  // ponytail: first body key found as a whole word wins; ceiling = a message naming two fields learns one per retry.
++  return Object.keys(body).find((k) => has(k) && new RegExp(`(^|[^A-Za-z0-9_])${k}([^A-Za-z0-9_]|$)`).test(message))
 +}
 +
  /**
@@ -121,13 +134,13 @@ diff --git a/lib/index.js b/lib/index.js
 +        return original.call(this, input, { ...nextInit, headers })
 +      }
 +      return original.call(this, input, nextInit)
-     }
--    return original.apply(this, arguments)
++    }
 +
 +    let body
 +    if (typeof url === 'string' && url.includes('opencode.ai') && typeof init?.body === 'string') {
 +      try { body = JSON.parse(init.body) } catch { /* non-JSON body: pass through */ }
-+    }
+     }
+-    return original.apply(this, arguments)
 +    if (!body || typeof body !== 'object') return send(init)
 +
 +    const model = body.model
@@ -142,7 +155,7 @@ diff --git a/lib/index.js b/lib/index.js
 +      if (response.status !== 400) return response
 +      const field = rejectedField(response.status, await response.clone().text().catch(() => ''), body)
 +      if (field === undefined) return response
-+      quirks.learn(model, field)
++      if (!TRANSIENT_FIELDS.has(field)) quirks.learn(model, field) // transient: retry without it, do not remember
 +      delete body[field]
 +    }
 +    return send({ ...init, body: JSON.stringify(body) })
@@ -155,7 +168,7 @@ diff --git a/lib/index.js b/lib/index.js
    const als = new AsyncLocalStorage()
    const uuidBySession = new Map()
  
-@@ -155,7 +251,7 @@
+@@ -155,7 +264,7 @@
      return
    }
  
@@ -164,7 +177,7 @@ diff --git a/lib/index.js b/lib/index.js
  
    ctx.effect(() => {
      globalThis.fetch = patched
-@@ -173,8 +269,18 @@
+@@ -173,8 +282,18 @@
      if (options === undefined || options === null || typeof options !== 'object') return next()
      if (!providers.has(String(options.provider))) return next()
      const sessionId = options.sessionId
