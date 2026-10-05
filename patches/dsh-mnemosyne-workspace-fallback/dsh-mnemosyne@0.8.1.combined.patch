@@ -102,7 +102,7 @@ index 72bc557..ce0d373 100644
        mode: "workspace",
        namespace: null,
 diff --git a/src/index.js b/src/index.js
-index 669110b..1afbcce 100644
+index 669110b..621e10c 100644
 --- a/src/index.js
 +++ b/src/index.js
 @@ -950,7 +950,13 @@ MEMORY_COLUMNS = (
@@ -154,7 +154,31 @@ index 669110b..1afbcce 100644
              },
              output: TEXT_OUTPUT,
              async execute(args, exec) {
-@@ -3105,6 +3118,13 @@ export function apply(ctx, config) {
+@@ -3101,10 +3114,36 @@ export function apply(ctx, config) {
+               // argument and always writes the config/env default, which would
+               // silently downgrade a global write to the session scope.
+               if (requestedScope === "global") {
+-                return sessRun("store", [payload.content, payload.source ?? "dsh", String(payload.importance ?? 0.5), "global"], "default");
++                const stored = await sessRun("store", [payload.content, payload.source ?? "dsh", String(payload.importance ?? 0.5), "global"], "default");
++                // A session inside a bound project can still file a project fact as
++                // global, where every project's recall injects it. The prompt, the
++                // parameter description and the skill all ask for workspace scope for
++                // project facts, and a Seedwise session still chose global twice with
++                // the corrected prompt loaded, so wording alone is not enough. The row
++                // is stored exactly as asked; this note tells the agent what it did,
++                // and it never misroutes a real global preference.
++                const t = resolveTarget(exec?.agent?.session, "read");
++                if (t?.mode === "scoped" && WORKSPACE_NAMESPACE_RE.test(String(t.sid))) {
++                  let name = null;
++                  try {
++                    const map = loadIdentityMap(expandPath(runtimeCfg().dataDir));
++                    name = (map.workspaces ?? []).find((w) => w.namespace === t.sid && !w.supersededBy)?.displayName ?? null;
++                  } catch {
++                    // the note is best-effort; the row is already stored
++                  }
++                  return `${stored}\n\nNote: this session is inside the bound workspace "${name ?? t.sid.slice(0, 24)}", but the row was stored as a global memory, which every project's recall injects. If this fact is about the project, store it with scope=workspace.`;
++                }
++                return stored;
                }
                if (requestedScope === "workspace") {
                  const target = toolTarget(exec, "read");
@@ -168,7 +192,7 @@ index 669110b..1afbcce 100644
                  return sessRun("store", [payload.content, payload.source ?? "dsh", String(payload.importance ?? 0.5), "session"], target.sid);
                }
                return sessRun("store", [payload.content, payload.source ?? "dsh", String(payload.importance ?? 0.5), "session"], agentSid(exec));
-@@ -3612,7 +3632,7 @@ Automatic prompt declaration, turn sync, and prefetch follow the Mnemosyne Herme
+@@ -3612,7 +3651,7 @@ Automatic prompt declaration, turn sync, and prefetch follow the Mnemosyne Herme
  - **Auto-sync** — Automatically stores user messages after each turn; add \`assistant\` to \`sync_roles\` to persist assistant replies.
  - **Auto-prefetch** — Recalls relevant memories before each model step and injects a filtered, untrusted context block.
  

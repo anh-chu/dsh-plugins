@@ -94,6 +94,13 @@ Now:
   now says what the prompt says. Found live, after the prompt fix was already loaded: a
   Seedwise session wrote *"Seedwise app (/home/sil/seedwise/app) … use the live Expo web
   view"* to `scope=global` at 22:58, with the corrected prompt in force;
+- a `scope=global` write from a session inside a **bound workspace** still stores the row
+  exactly as asked, and now returns a note naming that workspace and pointing at
+  `scope=workspace`. Wording alone did not stop it — that same session chose global twice
+  with the corrected prompt loaded — so this is the behaviour guard. It is limited to
+  bound workspaces: an unbound `$HOME` session, where the shared pool is the designed
+  fallback, gets no note. Nothing is misrouted, because the agent's choice is still
+  honoured;
 - the tool's `workspace` branch passed `target.sid` straight to the helper. After
   fix A an unbound directory resolves to `{mode:"default"}`, which has **no** `sid`, so
   `workspace` scope in `$HOME` would have spawned the helper with an undefined session
@@ -106,15 +113,16 @@ Now:
 node test/fallback-and-autobind.test.mjs
 ```
 
-22 assertions. It builds real fixtures (a git repo, a nested subdirectory, a
+24 assertions. It builds real fixtures (a git repo, a nested subdirectory, a
 non-repository directory, a marker directory inside a repository) and checks
 identity resolution behaviourally, plus static checks on the fallback and on the
-scope guidance (the prompt wording, the parameter description, the skill text, and the
-unbound `workspace` fallback). It **passes 6 and fails 15 of 21 on upstream 0.8.1** (one
-more assertion runs once binding succeeds) and passes 22/22 with the patch.
+scope guidance (the prompt wording, the parameter description, the skill text, the note
+on a global write inside a bound workspace, and the unbound `workspace` fallback). It
+**passes 6 and fails 17 of 23 on upstream 0.8.1** (one more assertion runs once binding
+succeeds) and passes 24/24 with the patch.
 
-The three skill-text assertions fail on a build that carries every other fix: that is
-the point of them. Run `DSH_MNEMOSYNE_DIR=<pre-fix copy> node test/…` to see it.
+Five assertions fail on a build that carries every other fix — three on the skill text,
+two on the note: that is the point of them. Run `DSH_MNEMOSYNE_DIR=<pre-fix copy> node test/…` to see it.
 
 The test asserts its own precondition that the fixture base is outside any
 repository, and uses `$HOME` rather than `/tmp` for that reason. Overrides:
@@ -182,4 +190,4 @@ cd /tmp/c && git diff --no-index --no-prefix a b > combined.patch
 ```
 
 Verified: the composition applies cleanly to pristine upstream, and that build passes both
-suites — 17 assertions for the dashboard fix, 22 for this one.
+suites — 17 assertions for the dashboard fix, 24 for this one.

@@ -129,7 +129,7 @@ expect(/scope=workspace for anything about the current project/.test(section),
 expect(/scope=global only for facts that hold in every project/.test(section),
   'the system prompt reserves global for facts true in every project');
 const toolStart = indexSrc.indexOf('name: "mnemosyne_remember"');
-const toolBody = toolStart === -1 ? '' : indexSrc.slice(toolStart, toolStart + 3600);
+const toolBody = toolStart === -1 ? '' : indexSrc.slice(toolStart, toolStart + 5000);
 expect(/Use workspace for facts about the current project/.test(toolBody),
   'the tool parameter description steers project facts to workspace');
 const wsBranch = toolBody.indexOf('requestedScope === "workspace"');
@@ -152,6 +152,17 @@ expect(/for facts about the current project/.test(skill),
   'the skill text sends project facts to workspace scope');
 expect(/only for facts that hold in every project/.test(skill),
   'the skill text reserves global for facts true in every project');
+
+// Wording alone did not stop it: the same session chose scope=global twice with the
+// corrected prompt loaded. A global write from inside a bound workspace now returns a
+// note naming the workspace, so the agent learns what it just did. The row is still
+// stored as asked, so a genuine global preference is never misrouted.
+const globalBranch = toolBody.indexOf('requestedScope === "global"');
+const globalBody = globalBranch === -1 ? '' : toolBody.slice(globalBranch, globalBranch + 2600);
+expect(/stored as a global memory/.test(globalBody) && /store it with scope=workspace/.test(globalBody),
+  'a global write inside a bound workspace returns a note pointing at workspace scope');
+expect(/WORKSPACE_NAMESPACE_RE\.test/.test(globalBody),
+  'the note is limited to sessions inside a bound workspace, so unbound $HOME is unaffected');
 
 // the system temp dir must never be a workspace boundary, however it is laid out
 // (this machine has a stray /tmp/.git, which is exactly the trap being guarded)
