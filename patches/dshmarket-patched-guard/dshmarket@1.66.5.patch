@@ -1,16 +1,101 @@
 diff --git a/client/client.js b/client/client.js
-index 9aeaf1257dc9b8752384469ded46f4aea26cb816..09e1f5706432957399008ff54d436ea01c5b8bc8 100644
+index 9aeaf1257dc9b8752384469ded46f4aea26cb816..a7769b70b5ad5f7be0a5c48e1e340c97dbf422cd 100644
 --- a/client/client.js
 +++ b/client/client.js
-@@ -9605,7 +9605,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+@@ -361,6 +361,12 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+ 			linkedDev: "本地开发",
+ 			hostUpdateReady: "有新版本 {0}",
+ 			hostUpdateHint: "本市场由桌面端安装和更新，新版本请在桌面端更新",
++			patchedBadge: "补丁 {0}",
++			patchedBadgeHint: "这个 profile 在 {0}（{1}）给它打了本地补丁。补丁按那个精确版本钉住：越过它更新，pnpm 会装上没打补丁的原版并且什么都不说。",
++			patchedUpdateBlocked: "待更新 v{0} · 请先 rebase 补丁",
++			patchedRiskTitle: "{0} 个带本地补丁的插件有新版本",
++			patchedRiskBody: "直接更新会让本地修复静默失效：pnpm 会装上新版本但不打补丁，而且正常退出。先把补丁改到新版本（新版本已经自带这个修复的话，删掉这条和补丁文件即可）。",
++			patchedQuiet: "{0} 个插件带有本地 pnpm 补丁，已从「全部更新」中排除。",
+ 			notesLink: "更新内容",
+ 			notesRelease: "版本说明",
+ 			notesCommits: "提交记录",
+@@ -1024,6 +1030,12 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+ 			linkedDev: "local",
+ 			hostUpdateReady: "New version {0}",
+ 			hostUpdateHint: "Installed and updated by the desktop app; update it there.",
++			patchedBadge: "patched {0}",
++			patchedBadgeHint: "This profile patches it at {0} ({1}). The patch is keyed on that exact version: updating past it installs the release unpatched and says nothing.",
++			patchedUpdateBlocked: "v{0} waiting · rebase patch first",
++			patchedRiskTitle: "{0} locally patched plugin(s) have an update available",
++			patchedRiskBody: "Updating drops the local fix silently — pnpm installs the new release unpatched and exits clean. Rebase the patch first, or drop the entry and its patch file if that release already carries the fix.",
++			patchedQuiet: "{0} plugins carry a local pnpm patch. They are excluded from Update all.",
+ 			notesLink: "What changed",
+ 			notesRelease: "Release notes",
+ 			notesCommits: "Commits",
+@@ -9605,7 +9617,13 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
  			}, []);
  			const selfName = installed["dshmarket"] !== void 0 ? "dshmarket" : "dsh-market";
  			const updatableNames = Object.keys(installed).filter((name) => name !== selfName && !effectiveDisabledSet.has(name) && isPluginUpdatable(name, String(installed[name]), updates[name], updatedNames));
 -			const batchUpdatableNames = updatableNames.filter((name) => updates[name]?.restoreRequired !== true);
 +			const batchUpdatableNames = updatableNames.filter((name) => updates[name]?.restoreRequired !== true && updates[name]?.patched === void 0);
++			// Locally patched plugins, and the subset that would LOSE the patch by
++			// updating. Read from `updates` directly rather than `updatableNames`:
++			// that list already drops `selfName`, which would hide dshmarket's own
++			// update — the one row where dropping the guard matters most.
++			const patchedNames = Object.keys(updates).filter((name) => updates[name]?.patched !== void 0);
++			const patchedRiskNames = patchedNames.filter((name) => updates[name]?.updateAvailable === true);
  			const ignoredUpdateSet = (0, react.useMemo)(() => new Set(ignoredUpdateNames), [ignoredUpdateNames]);
  			const reminderUpdatableNames = updatableNames.filter((name) => !ignoredUpdateSet.has(name) && !installedBlocked(name));
  			const reminderBatchUpdatableNames = batchUpdatableNames.filter((name) => !ignoredUpdateSet.has(name) && !installedBlocked(name));
+@@ -10744,7 +10762,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+ 									(() => {
+ 										const self = installed["dshmarket"] !== void 0 ? "dshmarket" : "dsh-market";
+ 										const status = updates[self];
+-										return status && status.updateAvailable && !updatedNames.includes(self) && !ignoredUpdateSet.has(self) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++										return status && status.updateAvailable && status.patched === void 0 && !updatedNames.includes(self) && !ignoredUpdateSet.has(self) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+ 											variant: "primary",
+ 											size: "sm",
+ 											disabled: updatingName !== null || busyUrl !== null,
+@@ -11044,7 +11062,19 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+ 								findings: hostDependencyFindings,
+ 								t
+ 							}),
+-							tab === "installed" && brokenPluginNames.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
++							tab === "installed" && patchedNames.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
++							className: Market_module_css_default.brokenPluginNotice,
++							children: patchedRiskNames.length > 0
++								? (0, react_jsx_runtime.jsx)("div", {
++									className: Market_module_css_default.brokenPluginItem,
++									children: [(0, react_jsx_runtime.jsx)("div", {
++										className: Market_module_css_default.brokenPluginText,
++										children: [(0, react_jsx_runtime.jsx)("b", { children: t("patchedRiskTitle").replace("{0}", String(patchedRiskNames.length)) }), (0, react_jsx_runtime.jsx)("span", { children: t("patchedRiskBody") }), (0, react_jsx_runtime.jsx)("span", { children: patchedRiskNames.join(", ") })]
++									})]
++								})
++								: (0, react_jsx_runtime.jsx)("div", { className: Market_module_css_default.banner, children: t("patchedQuiet").replace("{0}", String(patchedNames.length)) })
++						}),
++						tab === "installed" && brokenPluginNames.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+ 								className: Market_module_css_default.brokenPluginNotice,
+ 								children: brokenPluginNames.map((name) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+ 									className: Market_module_css_default.brokenPluginItem,
+@@ -12311,6 +12341,11 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+ 												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+ 													className: Market_module_css_default.irowTrailing,
+ 													children: [
++														status?.patched != null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
++															className: Market_module_css_default.metaTag,
++															title: t("patchedBadgeHint").replace("{0}", String(status.patched.key)).replace("{1}", String(status.patched.file)),
++															children: t("patchedBadge").replace("{0}", String(status.patched.version ?? status.patched.key))
++														}),
+ 														!missing && status?.sourceMigration !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+ 															variant: "outline",
+ 															size: "sm",
+@@ -12334,6 +12369,10 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+ 															className: Market_module_css_default.metaTag,
+ 															title: t("hostUpdateHint"),
+ 															children: t("hostUpdateReady").replace("{0}", status.latest)
++														}) : status && status.updateAvailable && status.patched != null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
++															className: Market_module_css_default.metaTag,
++															title: t("patchedBadgeHint").replace("{0}", String(status.patched.key)).replace("{1}", String(status.patched.file)),
++															children: t("patchedUpdateBlocked").replace("{0}", String(status.latest))
+ 														}) : status && status.updateAvailable ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+ 															variant: "primary",
+ 															size: "sm",
 diff --git a/lib/profile.js b/lib/profile.js
 index d107ea833795023898e9ea606506edea471dbfcd..299f321e4678c2f84267ea892d62df6f1a9a5a0d 100644
 --- a/lib/profile.js

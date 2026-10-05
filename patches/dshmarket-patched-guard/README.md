@@ -52,11 +52,33 @@ only and is left untouched to keep the diff small):
    sits before the busy-agent check, and it covers `dshmarket` itself — so the
    next dshmarket release is refused rather than silently unpatched.
 
-4. **`client/client.js`** — one filter change at the `batchUpdatableNames`
-   line: patched rows join `restoreRequired` rows in being excluded from
-   update-all and from its button count. Patched packages stay **visible** in
-   the row list and in the "N updates available" notice; only the batch action
-   skips them. The per-row button still works and still hits the server guard.
+4. **`client/client.js`** — two filters plus the visible half:
+   - `batchUpdatableNames` excludes patched rows, matching the existing
+     `restoreRequired` filter. Patched packages stay **visible** in the row list
+     and in the "N updates available" notice; only the batch action skips them.
+   - A **banner at the top of the Installed tab**, in the same warn styling the
+     market already uses for its broken-plugin notice. Warn-coloured and naming
+     the plugins when a patched plugin has an update pending; otherwise one
+     quiet grey line counting them. The at-risk list is read from `updates`
+     directly, not from `updatableNames` — that list already drops `selfName`,
+     which would hide dshmarket's own update.
+   - A **per-row chip** carrying the version the fix is welded to
+     (`patched 0.8.1`), tooltip naming the `.patch` file and the rule.
+   - The **Update button on a patched row** becomes a `metaTag` reading
+     `v0.9.0 waiting · rebase patch first` instead of an active button. A
+     disabled `<button>` shows no tooltip in most browsers, so the hint has to
+     live in a span.
+   - The **header self-update button** is suppressed for a patched dshmarket,
+     which is active right now for 1.66.5 → 1.66.9 and would be refused.
+
+   Six new locale keys, added to **both** the zh and en dictionaries.
+
+### Known gap
+
+The Settings card's own self-update button (the `setSelfUpdate` row) is **not**
+covered. Clicking it on a patched dshmarket still gets the 409 with the full
+bilingual explanation rather than a disabled control. The server guard is what
+makes that safe; only the affordance is missing.
 
 ## Ceiling — read this before trusting it
 
