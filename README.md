@@ -133,7 +133,11 @@ The patch makes unbound fall back to the shared pool, and auto-binds the enclosi
 keyed by its canonical path, so a project isolates itself without the plugin writing a marker into the
 user's repo (an explicit marker still wins; the filesystem root and `os.tmpdir()` are refused, because a
 stray `/tmp/.git` otherwise makes every scratch directory look like a project).
-`node test/fallback-and-autobind.test.mjs` fails 7 of 12 assertions on upstream and passes 13 with the
+It also fixes the scope guidance: the system prompt told agents to use `scope=global` for anything that
+must survive a session, so a project-only rule landed in the pool every project's recall injects. The
+prompt and the tool description now key on who needs the fact (`workspace` for the current project,
+`global` only for facts true everywhere), and `workspace` scope now works where no project is bound.
+`node test/fallback-and-autobind.test.mjs` fails 12 of 17 assertions on upstream and passes 18 with the
 patch. See the folder README for install — **it needs a `dsh web` restart to take effect.**
 
 ## Skills

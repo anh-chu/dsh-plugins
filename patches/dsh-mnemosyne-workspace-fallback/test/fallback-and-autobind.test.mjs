@@ -114,6 +114,29 @@ expect(/return \{ mode: "default" \};/.test(fnBody),
 expect(!/mode: "unbound", reason/.test(fnBody),
   'the provider no longer returns an unbound target (which skipped writes and declined injection)');
 
+// ------------------------------------------- C: scope guidance and its fallback
+// Agents followed the old advice ("use scope=global for facts that should survive a
+// new session") and wrote project facts to the shared pool, where every project's
+// recall injects them. Guidance now keys on WHO needs the fact, and the tool's
+// workspace scope must work where no project is bound, or the advice would break
+// in $HOME.
+const sectionStart = indexSrc.indexOf('const sectionText');
+const section = sectionStart === -1 ? '' : indexSrc.slice(sectionStart, sectionStart + 1600);
+expect(!/scope=global for facts that should survive a new session/.test(section),
+  'the system prompt no longer says to use global for anything that must survive a session');
+expect(/scope=workspace for anything about the current project/.test(section),
+  'the system prompt sends project facts to workspace scope');
+expect(/scope=global only for facts that hold in every project/.test(section),
+  'the system prompt reserves global for facts true in every project');
+const toolStart = indexSrc.indexOf('name: "mnemosyne_remember"');
+const toolBody = toolStart === -1 ? '' : indexSrc.slice(toolStart, toolStart + 3600);
+expect(/Use workspace for facts about the current project/.test(toolBody),
+  'the tool parameter description steers project facts to workspace');
+const wsBranch = toolBody.indexOf('requestedScope === "workspace"');
+const wsBody = wsBranch === -1 ? '' : toolBody.slice(wsBranch, wsBranch + 1300);
+expect(/target\.mode !== "scoped"/.test(wsBody) && /"global"\], "default"/.test(wsBody),
+  'workspace scope with no bound project writes to the shared pool rather than passing an undefined sid');
+
 // the system temp dir must never be a workspace boundary, however it is laid out
 // (this machine has a stray /tmp/.git, which is exactly the trap being guarded)
 const tmpProbe = join(tmpdir(), `mnab-probe-${process.pid}`);

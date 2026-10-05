@@ -1,10 +1,10 @@
-# dsh-mnemosyne: unbound directories go dark, and projects don't bind themselves
+# dsh-mnemosyne: unbound directories go dark, projects don't bind themselves, and agents file project facts globally
 
 Upstream: `dsh-mnemosyne` 0.8.1, installed from
 `github:rebron1900/dsh-mnemosyne#65f36a6ab57cdf4a7dec93d046a0c1e24006f00c`
 Repo: https://github.com/rebron1900/dsh-mnemosyne
 
-Two defects in workspace scope resolution, both of which make memory silently
+Two defects in workspace scope resolution (plus one in the scope guidance), all of which make memory silently
 disappear. They were found the hard way: with `recallMode: workspace` and nothing
 bound, memory appeared completely dead — recall worked, the store was healthy, and
 nothing was logged. This patch makes workspace mode behave the way a per-project
@@ -72,16 +72,39 @@ not hypothetical: this machine has a stray `/tmp/.git`, which makes every scratc
 directory under `/tmp` look like part of a repository — the first version of this
 patch bound `/tmp` as a project.
 
+**C. Agents are told to put project facts in the project's scope** (`src/index.js`,
+three edits). The system prompt every session receives said *"use scope=global for
+facts that should survive a new session"*. A rule about one project's procedure does
+need to survive a session, so an agent following that sentence wrote it to the shared
+pool, where every project's recall injects it. This happened: a Seedwise-only rule
+(Expo web view, 393×852 viewport, host `devvm`) was stored `scope=global`, importance
+1.0. The prompt never mentioned workspace scope, so the agent had no better option.
+Now:
+
+- the prompt keys the choice on **who needs the fact** — `scope=workspace` for anything
+  about the current project, `scope=global` only for facts true in every project — and
+  says that a fact naming a project path or ticket is workspace *even when it must
+  survive a new session*;
+- the `mnemosyne_remember` parameter description says the same, and notes the
+  fallback;
+- the tool's `workspace` branch passed `target.sid` straight to the helper. After
+  fix A an unbound directory resolves to `{mode:"default"}`, which has **no** `sid`, so
+  `workspace` scope in `$HOME` would have spawned the helper with an undefined session
+  id. It now writes to the shared pool as a global row in that case. Without this the
+  new advice would break in exactly the directory that has no project.
+
 ## Test
 
 ```sh
 node test/fallback-and-autobind.test.mjs
 ```
 
-13 assertions. It builds real fixtures (a git repo, a nested subdirectory, a
+18 assertions. It builds real fixtures (a git repo, a nested subdirectory, a
 non-repository directory, a marker directory inside a repository) and checks
-identity resolution behaviourally, plus two static checks on the fallback. It
-**fails 7 of 12 on upstream 0.8.1** and passes 13/13 with the patch.
+identity resolution behaviourally, plus static checks on the fallback and on the
+scope guidance (the prompt wording, the parameter description, and the unbound
+`workspace` fallback). It **fails 12 of 17 on upstream 0.8.1** and passes 18/18 with
+the patch.
 
 The test asserts its own precondition that the fixture base is outside any
 repository, and uses `$HOME` rather than `/tmp` for that reason. Overrides:
