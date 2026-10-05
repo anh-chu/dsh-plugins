@@ -148,6 +148,17 @@ prompt and the tool description now key on who needs the fact (`workspace` for t
 `node test/fallback-and-autobind.test.mjs` fails 12 of 17 assertions on upstream and passes 18 with the
 patch. See the folder README for install — **it needs a `dsh web` restart to take effect.**
 
+## Ops
+
+### `ops/mnemosyne/`
+A self-maintaining memory for `dsh-mnemosyne`. A daily systemd job backs up the store, consolidates
+aged captures into model-written summaries (one per topic, not one per session), checks each summary
+by rule, and hides redundant rows; a health check alarms when the job stops, a row count falls, or a
+person's own message is hidden from recall; a monthly job re-asks a fixed question set and alarms on
+a drop; any failure sends a phone alert through Home Assistant. **It adds, hides and demotes, and
+never deletes.** The folder README has the install steps and the known limits; `docs/` has the
+measurements and the faults found, with the engine source lines behind each decision.
+
 ## Skills
 
 Global agent skills that belong with the plugins they explain. DSH loads them from

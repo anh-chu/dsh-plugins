@@ -1,0 +1,14 @@
+[Unit]
+Description=mnemosyne daily backup, integrity check and consolidation
+# A failed run sends a phone alert. The health script covers the case where
+# the timer never starts, which OnFailure cannot see.
+OnFailure=mnemosyne-notify@%N.service
+
+[Service]
+Type=oneshot
+# Same file as dsh.service, so the timer and the daemon share one TTL and one
+# summariser configuration. Without it the engine trims at its 168 h default.
+EnvironmentFile=/home/sil/.dsh/mnemosyne/llm.env
+ExecStart=/home/sil/.dsh/bin/mnemosyne-daily.sh
+# Consolidation makes one model call per session group. 180 s each, with room.
+TimeoutStartSec=1800

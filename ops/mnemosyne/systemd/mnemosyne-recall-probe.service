@@ -1,0 +1,15 @@
+[Unit]
+Description=mnemosyne monthly recall check against the 29-probe set
+# A regression sends a phone alert, like the daily job.
+OnFailure=mnemosyne-notify@%N.service
+
+[Service]
+Type=oneshot
+# Same environment as the daemon: embedding model, TTL, summariser. The probe only reads,
+# but the engine opens the store through the same config.
+EnvironmentFile=/home/sil/.dsh/mnemosyne/llm.env
+Environment=MNEMOSYNE_DATA_DIR=/home/sil/.dsh/mnemosyne
+Environment=MNEMOSYNE_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+Environment=MNEMOSYNE_IMPORTANCE_WEIGHT=0
+ExecStart=/home/sil/.local/share/uv/tools/mnemosyne-memory/bin/python /home/sil/.dsh/bin/mnemosyne-recall-probe.py
+TimeoutStartSec=1200

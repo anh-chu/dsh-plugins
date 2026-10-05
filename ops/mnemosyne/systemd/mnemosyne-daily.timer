@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the mnemosyne backup + integrity check daily
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=600
+Unit=mnemosyne-daily.service
+
+[Install]
+WantedBy=timers.target

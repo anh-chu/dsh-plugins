@@ -1,0 +1,8 @@
+[Unit]
+Description=Phone alert: %i failed
+
+[Service]
+Type=oneshot
+# systemd gives units only /usr/local/bin:/usr/bin, which is why the script uses
+# absolute paths for op and bash. %i is the name of the unit that failed.
+ExecStart=/home/sil/.dsh/bin/mnemosyne-notify.sh "%i failed. Run: systemctl --user status %i" "Memory"

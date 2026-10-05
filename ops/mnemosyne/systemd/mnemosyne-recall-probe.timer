@@ -1,0 +1,12 @@
+[Unit]
+Description=mnemosyne monthly recall check
+
+[Timer]
+# 1st of each month, 05:10. The daily job runs at 04:30-04:40, so it is long finished.
+OnCalendar=*-*-01 05:10:00
+RandomizedDelaySec=10min
+# Run once at the next boot if the machine was off on the 1st.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
