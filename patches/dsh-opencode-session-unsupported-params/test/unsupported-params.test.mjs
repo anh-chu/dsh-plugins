@@ -2,7 +2,7 @@ import assert from 'node:assert'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { homedir } from 'node:os'
 const lib = process.env.PLUGIN_LIB ?? `${homedir()}/.dsh/profiles/web/node_modules/dsh-opencode-session/lib/index.js`
-const { patchFetch, resolveBodyRules, createQuirkStore, rejectedField } = await import(lib)
+const { patchFetch, resolveBodyRules, createQuirkStore, rejectedField, probeModels } = await import(lib)
 
 const ERR = { param: 'prompt_cache_retention', type: 'invalid_request_error',
   message: 'Upstream request failed: [unsupported_parameter] "prompt_cache_retention" is not supported by this endpoint; use "prompt_cache_options"' }
@@ -57,4 +57,29 @@ sent.length = 0
 await patchFetch(fake, new AsyncLocalStorage(), resolveBodyRules([{ model: '^kimi', drop: ['temperature'] }]), createQuirkStore(undefined))(
   'https://opencode.ai/x', { body: JSON.stringify({ model: 'kimi-k3', temperature: 1 }) })
 assert.ok(!('temperature' in sent[0]))
+// 8. Startup probe: probes each unprobed model once, skips probed ones, retries after an error finish.
+{
+  const calls = []
+  const llm = {
+    listModels: async () => [{ id: 'a' }, { id: 'b' }],
+    stream: async function* (o) { calls.push(o.model); yield { type: 'finish', reason: { kind: o.model === 'b' ? 'error' : 'stop' } } },
+  }
+  const pq = createQuirkStore(undefined)
+  assert.equal(await probeModels(llm, ['opencode-go'], pq), 1)      // a ok, b errored
+  assert.ok(pq.probed('a') && !pq.probed('b'))
+  calls.length = 0
+  await probeModels(llm, ['opencode-go'], pq)
+  assert.deepEqual(calls, ['b'])                                     // only the failed one is retried
+  assert.equal(calls.length, 1)
+  const dead = { listModels: async () => { throw new Error('down') }, stream: async function* () {} }
+  assert.equal(await probeModels(dead, ['opencode-go'], pq), 0)      // list failure is non-fatal
+}
+// 9. Learned + probed state survives a restart (file round trip).
+{
+  const { mkdtempSync } = await import('node:fs'); const { tmpdir } = await import('node:os'); const { join } = await import('node:path')
+  const file = join(mkdtempSync(join(tmpdir(), 'q-')), 'q.json')
+  const w = createQuirkStore(file); w.learn('glm', 'prompt_cache_retention'); w.markProbed('glm')
+  const r = createQuirkStore(file)
+  assert.ok(r.fields('glm').has('prompt_cache_retention')); assert.ok(r.probed('glm')); assert.ok(!r.fields('__probed').size)
+}
 console.log('all ok')

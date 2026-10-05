@@ -21,6 +21,12 @@ The fetch wrapper learns per-model quirks instead of hard-coding model names:
 3. Remember `(model, field)` in `~/.dsh/opencode-quirks.json` and strip it up front next time.
    Entries expire after 30 days so added upstream support is rediscovered.
 
+4. **Startup probe:** about 20 s after start, send one 1-token request ("hi", `maxTokens: 1`) to each
+   listed model not probed in the last 30 days, sequentially, through the normal stream path. A 400
+   is learned by step 2 before any real turn. A model whose probe ends in an error is retried at the
+   next start. Costs at most one tiny request per model per 30 days. Disable with `probe: false`;
+   change the delay with `probeDelayMs`.
+
 Optional config on the `opencode-go-session-header` row: `bodyRules` (ordered
 `{model: regex, drop: [...], keep: [...]}`, default none) and `quirksFile` (store path).
 Only requests to `opencode.ai` are touched. The patch also adds a stable header for session-less
