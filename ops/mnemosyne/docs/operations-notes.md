@@ -230,3 +230,45 @@ forced run, before the script switched the model-refresh step off) are hidden fr
 17 canonical facts and 1,810 curated rows unchanged, no human message hidden, verify and health pass.
 Recall of "user prefers responses in English" returns 0 proposal rows in the top 5. Backup
 `af9efe22c59823ca`. Reverse: `~/.dsh/backups/hide-proposals-reverse.sql`.
+
+## Scope leak, take two: the skill text (2026-10-05)
+
+**Report.** Session `session-53a02819` in `/home/sil/seedwise/app` "keeps saving memories to
+global". Its tool calls did use `scope=global` — six calls, three distinct rows.
+
+**Cause, from the session log, not from inference.**
+
+- The session started 12:51, before the 14:39 restart. Its prompt at turns 1 and 7 carried the
+  OLD sentence ("use scope=global for facts that should survive a new session"). From turn 8
+  (14:58) the prompt carried the fixed wording.
+- The two live rows were written at 22:58 and 23:03 — with the corrected prompt already loaded,
+  and the corrected tool description in the same request. The agent chose `global` anyway.
+  Wording was not sufficient for those two.
+- The plugin's **skill text** (inside `src/index.js`) still carried the old sentence. It was not
+  loaded in this session, so it is a latent second cause, and it is now fixed.
+- The workspace resolver was never at fault: `resolveMemoryContext({cwd:"/home/sil/seedwise/app"})`
+  returns the bound namespace, tested directly.
+
+**Rows.** `03e171f7` (22:58) and `ee0e12cd` (23:03) moved to
+`dsh_v2_workspace_4298778d…` with `scope=session`, both tables in one transaction. Backup
+`29b2d37e5540f65e`. Reverse: `~/.dsh/backups/move-seedwise-global-rows-reverse.sql`. Total rows
+unchanged; verify and integrity pass.
+
+An earlier row `e0ba2e995f967049` was written 13:03 by the same session under the old prompt (my
+earlier note said 06:03; the log time is 13:03). I moved it to the Seedwise namespace on
+2026-10-05; the session then deleted it at 22:58 with `mnemosyne_forget` and rewrote the rule.
+
+**A separate loss, found by the health check.** The curated count fell 1810 → 1803 between 18:54
+and 23:10. Not the TTL trim (0 curated rows are older than 720 h) and not this script (last run
+18:37). Session `9196b1c9` (home directory) called `mnemosyne_forget` on 7 migrated rows at
+20:43:02 (`55bf6558`, `5cb5a601`, `02c80ff3`) and 20:43:31 (`6e2d9b92`, `daa8248f`, `b7d9fc5f`,
+`afe5f453`). All seven were `migrated_from: mneme` rows about `agent-browser` and
+`chatgpt-web-consult`, which that session had reason to consider superseded. The alarm in
+`mnemosyne-health.sh` is what surfaced it. Restorable from
+`~/.dsh/backups/mnemosyne_backup_20261005_185451.db.gz`.
+
+**Fix.** The skill sentence now reads: workspace for facts about the current project, global only
+for facts that hold in every project. Both patch files regenerated against a rebuilt pristine tree;
+the profile copy of the combined patch updated. Test is 22 assertions; three fail on a build that
+carries every other fix. Commit `0817fa3`. **Needs a `dsh` restart, which the owner performs — do
+not restart the service.**
