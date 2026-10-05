@@ -32,6 +32,42 @@ window.__ModuleLoader__.load({
 		const MAX_WIDTH = 480;
 		const NARROW_MQ = "(max-width: 1199px)";
 
+		// ---- current-session store ------------------------------------------
+		// The panel lives in `shell.overlay`, a root-scope seat, and root-scope seats are given no
+		// Session identity: the harness hands `sessionId` only to session-scope seats, and the
+		// session-list snapshot carries no current selection. So a zero-render occupant of a
+		// session-scope seat publishes the open Session id here, and the overlay panel reads it.
+		// Upstream read `useSessions((s) => s.current)`, a field that no longer exists, which left
+		// the panel permanently on the global page with its Session tab disabled.
+		const sessionIdStore = { current: null, listeners: new Set() };
+		function publishSessionId(id) {
+			const next = typeof id === "string" && id !== "" ? id : null;
+			if (sessionIdStore.current === next) return;
+			sessionIdStore.current = next;
+			for (const listener of Array.from(sessionIdStore.listeners)) {
+				try { listener(); } catch {}
+			}
+		}
+		function useCurrentSessionId() {
+			const [sessionId, setSessionId] = useState(sessionIdStore.current);
+			useEffect(() => {
+				const listener = () => setSessionId(sessionIdStore.current);
+				sessionIdStore.listeners.add(listener);
+				listener();
+				return () => { sessionIdStore.listeners.delete(listener); };
+			}, []);
+			return sessionId;
+		}
+		/** Publishes the seat's `sessionId` and renders nothing; cleared only by its own unmount. */
+		function SessionIdProbe(props) {
+			const id = props ? props.sessionId : void 0;
+			useEffect(() => {
+				publishSessionId(id);
+				return () => { if (sessionIdStore.current === id) publishSessionId(null); };
+			}, [id]);
+			return null;
+		}
+
 		// ---- Utilities ---------------------------------------------------
 		function cacheKey(key) {
 			return `dsh-notepad:cache:${key}`;
@@ -819,9 +855,15 @@ window.__ModuleLoader__.load({
 		// ---- Outer panel ---------------------------------------------------
 		function NotepadPanel(props) {
 			const useSessions = props && typeof props.useSessions === "function" ? props.useSessions : void 0;
-			const currentSessionId = useSessions ? useSessions((s) => s.current) : void 0;
+			// Kept as a fallback for a host whose session-list snapshot still carries a selection
+			// (upstream's assumption); in 0.2 it has none, so the probe below is the live source.
+			const snapshotSelection = useSessions ? useSessions((s) => s && s.current) : void 0;
+			const probedSessionId = useCurrentSessionId();
+			const currentSessionId = typeof probedSessionId === "string" && probedSessionId !== ""
+				? probedSessionId
+				: (typeof snapshotSelection === "string" && snapshotSelection !== "" ? snapshotSelection : void 0);
 
-			const [scope, setScope] = useState("global"); // global | session
+			const [scope, setScope] = useState("session"); // global | session
 			const [viewMode, setViewMode] = useState("single"); // single | split
 			const [open, setOpen] = useState(true);
 			const [width, setWidth] = useState(280);
@@ -1217,6 +1259,12 @@ window.__ModuleLoader__.load({
 				order: 50,
 				label: "Notepad"
 			}, NotepadPanel));
+			// Session-scope seat used only to learn which Session is open; renders nothing.
+			ctx.slots.inject("conversation.input.left", () => ctx.slots.register({
+				name: "conversation.input.left",
+				id: "dsh-notepad-session-probe",
+				order: 1000
+			}, SessionIdProbe));
 		}
 
 		exports.apply = apply;

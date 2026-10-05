@@ -74,7 +74,17 @@ This copy is a local fork of `dsh-notepad` 0.1.1, installed into the web profile
    (`parentWriteRefusal`). Only one level of ancestry is visible: the parent's own parent is not
    reachable without a session lookup.
 
+4. **The open Session is resolved for the frame-wide panel.** The panel registers into
+   `shell.overlay`, a root-scope seat, and root-scope seats are handed no `sessionId`; the
+   session-list snapshot in 0.2 has no `current` field either, so upstream's
+   `useSessions((s) => s.current)` always returned undefined. The panel therefore stayed on the
+   global page with its Session tab disabled ("Enter a session first"), while `notepad_write`
+   defaulted to the session page — an agent could write nine lines and the panel showed nothing.
+   A zero-render occupant of `conversation.input.left` (session scope, rendered whenever a Session
+   is open) publishes `props.sessionId` into a module-level store the overlay panel subscribes to.
+   The panel also now opens on the session page, matching the tools' default.
+
 Check for the section: `node tests/section.test.mjs`.
 
 Do not reinstall this plugin by its npm name - `dsh plugin --profile web add dsh-notepad` would
-restore the upstream package and drop all three changes. Re-add it by the `link:` path instead.
+restore the upstream package and drop all four changes. Re-add it by the `link:` path instead.
