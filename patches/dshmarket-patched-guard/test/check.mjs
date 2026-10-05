@@ -18,6 +18,7 @@ const PROFILE = process.env.DSH_PROFILE_DIR ?? '/home/sil/.dsh/profiles/web'
 // fixture cases get exercised BEFORE the patch is committed.
 const LIB = process.env.DSH_MARKET_LIB ?? join(PROFILE, 'node_modules/dshmarket/lib/profile.js')
 const { readPatchedDependencies } = await import(LIB)
+const { repoSlug, forkBaseVersion, isUpgrade } = await import(LIB.replace(/profile\.js$/u, 'updates.js'))
 
 function fixture(name, { workspace, manifest }) {
   const dir = mkdtempSync(join(tmpdir(), `dsh-patched-${name}-`))
@@ -117,6 +118,48 @@ try {
     // dshmarket patches ITSELF, so once the guard patch is committed this
     // entry exists and the guard covers its own next release too.
     assert.equal(map.get('dshmarket').version, '1.66.5')
+  })
+
+  // 8. Fork detection. The upstream is named only when both sides declare the
+  //    SAME repository — a shared package name is not evidence, or an
+  //    unrelated package would be reported as the fork's upstream.
+  check('repoSlug reduces every spelling to owner/name', () => {
+    assert.equal(repoSlug('git+https://github.com/leeyoung1/dsh-advisor-plugin.git'), 'leeyoung1/dsh-advisor-plugin')
+    assert.equal(repoSlug('https://github.com/SpookySandwich/dsh-plugin-message-edit'), 'spookysandwich/dsh-plugin-message-edit')
+    assert.equal(repoSlug('git@github.com:baixianger/dsh-bridge.git'), 'baixianger/dsh-bridge')
+    // The `github:` shortcut must NOT lose the owner — that was a real bug in
+    // the first version of this function.
+    assert.equal(repoSlug('github:43456-awa/dsh-notepad'), '43456-awa/dsh-notepad')
+    assert.equal(repoSlug('github:bare'), null)
+    assert.equal(repoSlug(undefined), null)
+    assert.equal(repoSlug('not a url'), null)
+  })
+
+  // 9. The local-build suffix. `<upstream>-local.N` is a prerelease by semver,
+  //    so without stripping it a fork of a STABLE release reports an upgrade
+  //    that does not exist — which is how the market offered to "restore" a
+  //    fork that was not behind at all.
+  check('a -local.N suffix does not read as an upgrade', () => {
+    assert.equal(forkBaseVersion('0.2.6-local.1'), '0.2.6')
+    assert.equal(isUpgrade(forkBaseVersion('0.2.6-local.1'), '0.2.6'), false)
+    // The raw comparison is what produced the false positive.
+    assert.equal(isUpgrade('0.2.6-local.1', '0.2.6'), true)
+  })
+
+  check('behind is still reported for a genuinely stale fork', () => {
+    assert.equal(isUpgrade(forkBaseVersion('1.1.0-local.1'), '1.2.0'), true)
+    assert.equal(isUpgrade(forkBaseVersion('0.3.3'), '0.3.7'), true)
+    // A fork of a PRERELEASE base compares normally and stays current.
+    assert.equal(isUpgrade(forkBaseVersion('0.1.0-rc.17-local.1'), '0.1.0-rc.17'), false)
+    assert.equal(isUpgrade(forkBaseVersion('0.1.1'), '0.1.1'), false)
+  })
+
+  // 10. A mismatch is the whole safety property: a different repository means
+  //     no upstream is reported, rather than the wrong one.
+  check('a repository mismatch yields no upstream', () => {
+    const forkRepo = repoSlug('git+https://github.com/leeyoung1/dsh-advisor-plugin.git')
+    const npmRepo = repoSlug('git+https://github.com/someone-else/dsh-advisor-plugin.git')
+    assert.notEqual(forkRepo, npmRepo)
   })
 } finally {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })

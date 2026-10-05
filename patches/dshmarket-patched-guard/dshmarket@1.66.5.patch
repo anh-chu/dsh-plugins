@@ -1,8 +1,8 @@
 diff --git a/client/client.js b/client/client.js
-index 9aeaf1257dc9b8752384469ded46f4aea26cb816..a7769b70b5ad5f7be0a5c48e1e340c97dbf422cd 100644
+index 9aeaf1257dc9b8752384469ded46f4aea26cb816..3016b21f3c83fc27bb61e33ae1ff0708d6e1c7b8 100644
 --- a/client/client.js
 +++ b/client/client.js
-@@ -361,6 +361,12 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+@@ -361,6 +361,14 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
  			linkedDev: "本地开发",
  			hostUpdateReady: "有新版本 {0}",
  			hostUpdateHint: "本市场由桌面端安装和更新，新版本请在桌面端更新",
@@ -12,10 +12,12 @@ index 9aeaf1257dc9b8752384469ded46f4aea26cb816..a7769b70b5ad5f7be0a5c48e1e340c97
 +			patchedRiskTitle: "{0} 个带本地补丁的插件有新版本",
 +			patchedRiskBody: "直接更新会让本地修复静默失效：pnpm 会装上新版本但不打补丁，而且正常退出。先把补丁改到新版本（新版本已经自带这个修复的话，删掉这条和补丁文件即可）。",
 +			patchedQuiet: "{0} 个插件带有本地 pnpm 补丁，已从「全部更新」中排除。",
++			upstreamBehind: "上游 v{0}",
++			upstreamHint: "这是 {0} 的本地 fork（当前 {1}），上游已经更新。市场不会自动更新 fork：恢复会用已发布版本替换掉你的改动。",
  			notesLink: "更新内容",
  			notesRelease: "版本说明",
  			notesCommits: "提交记录",
-@@ -1024,6 +1030,12 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+@@ -1024,6 +1032,14 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
  			linkedDev: "local",
  			hostUpdateReady: "New version {0}",
  			hostUpdateHint: "Installed and updated by the desktop app; update it there.",
@@ -25,10 +27,12 @@ index 9aeaf1257dc9b8752384469ded46f4aea26cb816..a7769b70b5ad5f7be0a5c48e1e340c97
 +			patchedRiskTitle: "{0} locally patched plugin(s) have an update available",
 +			patchedRiskBody: "Updating drops the local fix silently — pnpm installs the new release unpatched and exits clean. Rebase the patch first, or drop the entry and its patch file if that release already carries the fix.",
 +			patchedQuiet: "{0} plugins carry a local pnpm patch. They are excluded from Update all.",
++			upstreamBehind: "upstream v{0}",
++			upstreamHint: "A local fork of {0}, currently at {1}. Upstream has moved on. The market will not update a fork — restoring replaces your changes with the published release.",
  			notesLink: "What changed",
  			notesRelease: "Release notes",
  			notesCommits: "Commits",
-@@ -9605,7 +9617,13 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+@@ -9605,7 +9621,13 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
  			}, []);
  			const selfName = installed["dshmarket"] !== void 0 ? "dshmarket" : "dsh-market";
  			const updatableNames = Object.keys(installed).filter((name) => name !== selfName && !effectiveDisabledSet.has(name) && isPluginUpdatable(name, String(installed[name]), updates[name], updatedNames));
@@ -43,7 +47,7 @@ index 9aeaf1257dc9b8752384469ded46f4aea26cb816..a7769b70b5ad5f7be0a5c48e1e340c97
  			const ignoredUpdateSet = (0, react.useMemo)(() => new Set(ignoredUpdateNames), [ignoredUpdateNames]);
  			const reminderUpdatableNames = updatableNames.filter((name) => !ignoredUpdateSet.has(name) && !installedBlocked(name));
  			const reminderBatchUpdatableNames = batchUpdatableNames.filter((name) => !ignoredUpdateSet.has(name) && !installedBlocked(name));
-@@ -10744,7 +10762,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+@@ -10744,7 +10766,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
  									(() => {
  										const self = installed["dshmarket"] !== void 0 ? "dshmarket" : "dsh-market";
  										const status = updates[self];
@@ -52,7 +56,7 @@ index 9aeaf1257dc9b8752384469ded46f4aea26cb816..a7769b70b5ad5f7be0a5c48e1e340c97
  											variant: "primary",
  											size: "sm",
  											disabled: updatingName !== null || busyUrl !== null,
-@@ -11044,7 +11062,19 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+@@ -11044,7 +11066,19 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
  								findings: hostDependencyFindings,
  								t
  							}),
@@ -73,7 +77,7 @@ index 9aeaf1257dc9b8752384469ded46f4aea26cb816..a7769b70b5ad5f7be0a5c48e1e340c97
  								className: Market_module_css_default.brokenPluginNotice,
  								children: brokenPluginNames.map((name) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
  									className: Market_module_css_default.brokenPluginItem,
-@@ -12311,6 +12341,11 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+@@ -12311,6 +12345,20 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
  												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
  													className: Market_module_css_default.irowTrailing,
  													children: [
@@ -82,20 +86,31 @@ index 9aeaf1257dc9b8752384469ded46f4aea26cb816..a7769b70b5ad5f7be0a5c48e1e340c97
 +															title: t("patchedBadgeHint").replace("{0}", String(status.patched.key)).replace("{1}", String(status.patched.file)),
 +															children: t("patchedBadge").replace("{0}", String(status.patched.version ?? status.patched.key))
 +														}),
++														// A local fork that is behind its upstream. Reported ONLY — the
++														// Restore button on this row replaces the checkout with the
++														// published package, which is the wrong action for a fork the
++														// user intends to keep, so it is not offered here.
++														status?.upstream?.behind === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
++															className: Market_module_css_default.metaTag,
++															title: t("upstreamHint").replace("{0}", String(status.upstream.repo)).replace("{1}", String(status.version ?? "")),
++															children: t("upstreamBehind").replace("{0}", String(status.upstream.latest))
++														}),
  														!missing && status?.sourceMigration !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
  															variant: "outline",
  															size: "sm",
-@@ -12334,6 +12369,10 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+@@ -12334,7 +12382,11 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
  															className: Market_module_css_default.metaTag,
  															title: t("hostUpdateHint"),
  															children: t("hostUpdateReady").replace("{0}", status.latest)
+-														}) : status && status.updateAvailable ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
 +														}) : status && status.updateAvailable && status.patched != null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 +															className: Market_module_css_default.metaTag,
 +															title: t("patchedBadgeHint").replace("{0}", String(status.patched.key)).replace("{1}", String(status.patched.file)),
 +															children: t("patchedUpdateBlocked").replace("{0}", String(status.latest))
- 														}) : status && status.updateAvailable ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++														}) : status && status.upstream?.behind === true ? null : status && status.updateAvailable ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
  															variant: "primary",
  															size: "sm",
+ 															className: Market_module_css_default.warnBtn,
 diff --git a/lib/profile.js b/lib/profile.js
 index d107ea833795023898e9ea606506edea471dbfcd..299f321e4678c2f84267ea892d62df6f1a9a5a0d 100644
 --- a/lib/profile.js
@@ -227,7 +242,7 @@ index 3de50e383fd97d927fa84811426088ab950d9820..d19af1fd08a9d4bbfe8c4fe19158beb0
                          // hazard the "restart" verdict cannot fix: the running module keeps
                          // executing while its files change under it, so lazily imported
 diff --git a/lib/updates.js b/lib/updates.js
-index 1d0e02005bdb37c2cf718de466c6ac9190646fd2..022b064e00d083e97f6ff72f860fdefac6c4329f 100644
+index 1d0e02005bdb37c2cf718de466c6ac9190646fd2..5f7b544636ad0badb3e5cc9d82a4d7bd0c834e2f 100644
 --- a/lib/updates.js
 +++ b/lib/updates.js
 @@ -7,7 +7,7 @@ import { DIST_TAG } from './channels.js';
@@ -235,11 +250,11 @@ index 1d0e02005bdb37c2cf718de466c6ac9190646fd2..022b064e00d083e97f6ff72f860fdefa
  import { marketFetch } from './net.js';
  import { activeRegion } from './regions.js';
 -import { profileDir, readGitResolutionCommit, readInstalled, readInstalledVersion, readLockCommits } from './profile.js';
-+import { profileDir, readGitResolutionCommit, readInstalled, readInstalledVersion, readLockCommits, readPatchedDependencies } from './profile.js';
++import { profileDir, readGitResolutionCommit, readInstalled, readInstalledManifest, readInstalledVersion, readLockCommits, readPatchedDependencies } from './profile.js';
  import { gitCommitOfTarget, gitRefOfTarget, gitUploadPackUrl, hostedRepoKey, githubCommitOfTarget, githubRefOfTarget, isGenerationLink, isGitHostedSpec, repoOfTarget } from './sources.js';
  const UPDATES_TTL_MS = 30 * 60 * 1000;
  const GIT_REMOTE_HEAD_TIMEOUT_MS = 6000;
-@@ -399,6 +399,27 @@ onlineSourceFor = new Map()) {
+@@ -399,6 +399,100 @@ onlineSourceFor = new Map()) {
              result[name] = { kind: (spec.startsWith('github:') || isGitHostedSpec(spec)) ? 'github' : 'npm', version, current: null, latest: null, updateAvailable: false };
          }
      }));
@@ -264,6 +279,79 @@ index 1d0e02005bdb37c2cf718de466c6ac9190646fd2..022b064e00d083e97f6ff72f860fdefa
 +            versionDrifted: entry.version !== null && status.version !== null && entry.version !== status.version,
 +        };
 +    }
++    await attachForkUpstream(profile, activeProfileDir, result);
      updatesCache = { key: cacheKey, at: Date.now(), data: result };
      return result;
  }
++/**
++ * `owner/name` for any spelling pnpm and npm use: `git+https://host/o/r.git`,
++ * a bare `https://host/o/r`, an `git@host:o/r.git` scp form, and the `github:o/r`
++ * shortcut. Null for anything else — a URL that does not reduce to a repo is
++ * not evidence of anything.
++ */
++export function repoSlug(url) {
++    if (typeof url !== 'string')
++        return null;
++    const trimmed = url.trim().replace(/\.git$/, '');
++    const shortcut = /^github:(.+)$/u.exec(trimmed);
++    if (shortcut !== null) {
++        const parts = shortcut[1].split('/').filter(part => part !== '');
++        return parts.length >= 2 ? `${parts[0]}/${parts[1]}`.toLowerCase() : null;
++    }
++    const scp = /^[A-Za-z0-9._-]+@[^:]+:(.+)$/u.exec(trimmed);
++    const path = scp !== null ? scp[1] : trimmed.replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//u, '').replace(/^[^/]+\//u, '');
++    const parts = path.split('/').filter(part => part !== '');
++    return parts.length >= 2 ? `${parts[0]}/${parts[1]}`.toLowerCase() : null;
++}
++/**
++ * The upstream release a local fork was taken from.
++ *
++ * A fork records the version it forked FROM plus a local counter — this
++ * profile's convention is `<upstream>-local.N`. That suffix is a prerelease by
++ * semver's rules, and a stable release outranks a prerelease of the same core,
++ * so comparing `0.2.6-local.1` against `0.2.6` reports an upgrade that does not
++ * exist. Strip it before comparing; that is the whole difference between "your
++ * fork is stale" and "you are behind".
++ */
++export function forkBaseVersion(version) {
++    return typeof version === 'string' ? version.replace(/-local\.\d+$/u, '') : version;
++}
++/**
++ * Report upstream for locally installed plugins that are forks of a published
++ * package, across BOTH `file:` and `link:` specs.
++ *
++ * `link:` installs used to be skipped outright as development checkouts, which
++ * left every fork installed that way permanently invisible.
++ *
++ * The upstream is named only when the INSTALLED package's own `repository`
++ * matches npm's `repository` for the same package name. A shared name is not
++ * evidence — an unrelated package that happens to collide would otherwise be
++ * reported as this fork's upstream, which is how a wrong restore gets offered.
++ * A plugin the user wrote declares no repository, so it is simply absent here.
++ */
++async function attachForkUpstream(profile, activeProfileDir, result) {
++    const candidates = Object.entries(result).filter(([, status]) => status.kind === 'linked');
++    await Promise.all(candidates.map(async ([name, status]) => {
++        const manifest = readInstalledManifest(profile, name, activeProfileDir);
++        const declared = repoSlug(manifest?.repository?.url);
++        if (declared === null)
++            return;
++        const meta = await fetchJson(npmUrl(`${encodeURIComponent(name)}/latest`)).catch(() => null);
++        const published = repoSlug(meta?.repository?.url);
++        if (meta === null || typeof meta.version !== 'string' || published !== declared)
++            return;
++        const base = forkBaseVersion(status.version);
++        const behind = isUpgrade(base, meta.version);
++        status.upstream = { repo: declared, latest: meta.version, behind };
++        // Correct the row from the base version, so a fork of a stable release
++        // stops advertising an update it does not have, and one that IS behind
++        // stops being hidden because it was installed by link.
++        status.current = base ?? status.current;
++        status.latest = meta.version;
++        status.updateAvailable = behind;
++        if (behind)
++            status.restoreRequired = true;
++        else
++            delete status.restoreRequired;
++    }));
++}

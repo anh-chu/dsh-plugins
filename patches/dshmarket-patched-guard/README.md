@@ -73,6 +73,31 @@ only and is left untouched to keep the diff small):
 
    Six new locale keys, added to **both** the zh and en dictionaries.
 
+5. **Fork upstream awareness** — a second post-pass in `lib/updates.js`, over
+   `file:` **and** `link:` installs, attaching `upstream: { repo, latest,
+   behind }`. Three defects fixed together, because they share one cause (the
+   market never looked at a local install's own metadata):
+
+   - **`link:` installs were skipped outright** as development checkouts, so
+     every fork installed that way was permanently invisible.
+   - **The `-local.N` false positive.** The fork convention here is
+     `<upstream>-local.N`, and semver reads that suffix as a prerelease — while
+     a stable release outranks a prerelease of the same core. So
+     `0.2.6-local.1` vs upstream `0.2.6` reported an update that did not
+     exist, and offered a Restore that would have replaced the fork.
+     `forkBaseVersion()` strips the suffix before comparing. A fork of a
+     *prerelease* base was never affected, which is why only some forks showed it.
+   - **The upstream is named only when the installed package's `repository`
+     matches npm's `repository` for the same name** (`repoSlug()` handles every
+     spelling: `git+https`, scp, bare https, `github:`). A shared package name
+     is not evidence. A plugin the user wrote declares no repository at all,
+     so it is simply absent rather than special-cased by name.
+
+   In the client, a behind fork gets an `upstream v1.2.0` chip, and its
+   **Restore button is not rendered** — restoring replaces the checkout with
+   the published package, which is the wrong action for a fork the user intends
+   to keep. Two more locale keys in both dictionaries.
+
 ### Known gap
 
 The Settings card's own self-update button (the `setSelfUpdate` row) is **not**
