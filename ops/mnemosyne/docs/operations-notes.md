@@ -186,3 +186,40 @@ recall-baseline.json, recall-history.jsonl, maintain-state.json}`;
 `~/.config/systemd/user/{mnemosyne-daily.service, mnemosyne-notify@.service,
 mnemosyne-recall-probe.{service,timer}}`. Reverse files in `~/.dsh/backups/`:
 `unhide-3-human-rows-reverse.sql`, `hide-assistant-originals-reverse.sql`.
+
+## Topic-sized summaries — live 2026-10-05
+
+**Problem.** The engine groups rows for one summary by `source`. Every captured turn has the source
+`conversation`, so one summary covered a whole session. The `default` namespace holds all home-directory
+work, so 130 turns of unrelated work became 3 summaries that read as a gist of a day.
+
+**Change (script only; the engine is not patched).** `mnemosyne-maintain.py` now, per session:
+1. Restores any leftover `conversation#…` source label from a crashed run.
+2. Asks the model to split the eligible turns into topic segments. It accepts the answer only if every
+   turn appears once and in order; segments under 3 turns merge into a neighbour; window capped at 200.
+3. Sets `source = 'conversation#<n>-<slug>'` per segment for the length of one sleep.
+4. Runs `sleep`, then restores `source = 'conversation'` in a `finally`.
+Any invalid split, model failure or crash falls back to one summary per session and leaves no stray
+label. `--no-topics` forces the old behaviour.
+
+**Live result.** 13 topic summaries for `default` (3 to 28 rows each). The two old session-sized
+summaries are hidden (`valid_until` set, not deleted); the one-row agent-note summary stays because no
+topic summary covers it. Backup `a6c7a921f2ee1fa6`. 0 unconsolidated rows, 0 stray labels, verify and
+health pass (11 of 11).
+
+**Bug found and fixed: summaries born expired.** The engine gives a summary the earliest `valid_until`
+of the rows it covers (`beam.py`, consolidation around line 8372). A group that contains an
+`[ASSISTANT]` row hidden earlier therefore produced a summary that recall already skipped. 8 of the 13
+topic summaries were born hidden. `mnemosyne-maintain.py` now clears an inherited expiry on every
+summary that passes its checks. A copy test over rows with 44 hidden `[ASSISTANT]` rows wrote 13
+summaries and none was expired. The first (unfixed) run affected only this topic run.
+
+**Guard that caught it.** The swap step refuses to hide an old summary unless every source row it
+covers is covered by a visible new one. It refused twice: once for the expiry bug, once for a single
+agent note. Keep that check for any future re-summarising.
+
+**Limits.** A topic that straddles the 360 h cutoff is split across two days. The split is one more
+model call; a wrong split gives odd summaries, not data loss. Summaries still rank below exact-word
+matches in recall, so a topic question often returns the raw turn first.
+
+Reverse files in `~/.dsh/backups/`: `topic-redo-reverse.sql`, `topic-redo-unexpire-reverse.sql`.
