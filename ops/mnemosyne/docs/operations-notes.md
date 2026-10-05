@@ -223,3 +223,10 @@ model call; a wrong split gives odd summaries, not data loss. Summaries still ra
 matches in recall, so a topic question often returns the raw turn first.
 
 Reverse files in `~/.dsh/backups/`: `topic-redo-reverse.sql`, `topic-redo-unexpire-reverse.sql`.
+
+**Proposal rows hidden — 2026-10-05.** The 34 `sleep_model_refresh_proposal` rows (source of the first
+forced run, before the script switched the model-refresh step off) are hidden from recall with
+`valid_until` set and `superseded_by = 'proposal-hidden'`. Nothing deleted: total rows 2,193 unchanged,
+17 canonical facts and 1,810 curated rows unchanged, no human message hidden, verify and health pass.
+Recall of "user prefers responses in English" returns 0 proposal rows in the top 5. Backup
+`af9efe22c59823ca`. Reverse: `~/.dsh/backups/hide-proposals-reverse.sql`.
