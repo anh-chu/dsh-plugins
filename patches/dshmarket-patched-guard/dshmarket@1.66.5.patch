@@ -1,0 +1,184 @@
+diff --git a/client/client.js b/client/client.js
+index 9aeaf1257dc9b8752384469ded46f4aea26cb816..09e1f5706432957399008ff54d436ea01c5b8bc8 100644
+--- a/client/client.js
++++ b/client/client.js
+@@ -9605,7 +9605,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+ 			}, []);
+ 			const selfName = installed["dshmarket"] !== void 0 ? "dshmarket" : "dsh-market";
+ 			const updatableNames = Object.keys(installed).filter((name) => name !== selfName && !effectiveDisabledSet.has(name) && isPluginUpdatable(name, String(installed[name]), updates[name], updatedNames));
+-			const batchUpdatableNames = updatableNames.filter((name) => updates[name]?.restoreRequired !== true);
++			const batchUpdatableNames = updatableNames.filter((name) => updates[name]?.restoreRequired !== true && updates[name]?.patched === void 0);
+ 			const ignoredUpdateSet = (0, react.useMemo)(() => new Set(ignoredUpdateNames), [ignoredUpdateNames]);
+ 			const reminderUpdatableNames = updatableNames.filter((name) => !ignoredUpdateSet.has(name) && !installedBlocked(name));
+ 			const reminderBatchUpdatableNames = batchUpdatableNames.filter((name) => !ignoredUpdateSet.has(name) && !installedBlocked(name));
+diff --git a/lib/profile.js b/lib/profile.js
+index d107ea833795023898e9ea606506edea471dbfcd..299f321e4678c2f84267ea892d62df6f1a9a5a0d 100644
+--- a/lib/profile.js
++++ b/lib/profile.js
+@@ -8,6 +8,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+ import { isDeepStrictEqual } from 'node:util';
+ import { resolveDshHome } from './home-paths.js';
+ import { githubRemoteIdentities, githubRepoIdentities, isGitHostedSpec, repoOfTarget } from './sources.js';
++import { load as loadYaml } from 'js-yaml';
+ /**
+  * Whether a profile name follows DSH's own directory-name contract.
+  *
+@@ -64,6 +65,67 @@ export function readInstalled(profile, explicitDir) {
+         return {};
+     }
+ }
++/**
++ * The profile's own pnpm patches, read into one map keyed by package name.
++ *
++ * Two places carry them and pnpm honours both: `patchedDependencies` at the
++ * top level of pnpm-workspace.yaml, and `pnpm.patchedDependencies` in the
++ * profile manifest. The keys are `name@exactVersion` — pnpm pins the patch
++ * to ONE version, so the entry stops matching the moment the install moves
++ * off it, which is the fact the update guard needs.
++ *
++ * A key with no `@version` applies to every version of that package and is
++ * recorded with `version: null`, so a caller can tell "patched at 0.8.1"
++ * from "patched always".
++ *
++ * Returns an empty map on ANY read or parse failure. This feeds the update
++ * list, and a malformed yaml file must degrade the answer to "no patches
++ * known here" rather than take the whole listing down.
++ */
++export function readPatchedDependencies(profile, explicitDir) {
++    const map = new Map();
++    const add = (entries) => {
++        if (entries === null || typeof entries !== 'object' || Array.isArray(entries))
++            return;
++        for (const [key, file] of Object.entries(entries)) {
++            if (typeof key !== 'string' || key === '')
++                continue;
++            // `lastIndexOf`, not `indexOf`: a scoped name starts with `@`, so
++            // splitting on the first one would read `@scope` as the name and
++            // `pkg` as the version. A key with no version keeps `null`.
++            const at = key.lastIndexOf('@');
++            const name = at > 0 ? key.slice(0, at) : key;
++            const version = at > 0 ? key.slice(at + 1) : null;
++            if (name === '')
++                continue;
++            const existing = map.get(name);
++            // Two entries for one name means the version was already moved on
++            // and the old one left behind. Keep the NEWEST key: that is the
++            // one pnpm still honours, and it is the one a stale second entry
++            // must not be allowed to mask.
++            if (existing !== undefined && existing.version !== null && (version === null || existing.version === version))
++                continue;
++            map.set(name, { key, file: typeof file === 'string' ? file : '', version });
++        }
++    };
++    const dir = profileDir(profile, explicitDir);
++    try {
++        const workspace = loadYaml(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8'));
++        add(workspace?.patchedDependencies ?? null);
++    }
++    catch {
++        // No workspace file, or one that does not parse. The manifest below
++        // may still carry the entries.
++    }
++    try {
++        const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
++        add(manifest?.pnpm?.patchedDependencies ?? null);
++    }
++    catch {
++        // Unreadable manifest — readInstalled() reports the same condition.
++    }
++    return map;
++}
+ /**
+  * RAW dependency map of the profile manifest — including the in-box bundles
+  * readInstalled() filters out. This is the rollback snapshot (#65): restoring
+diff --git a/lib/routes.js b/lib/routes.js
+index 3de50e383fd97d927fa84811426088ab950d9820..d19af1fd08a9d4bbfe8c4fe19158beb03b1203af 100644
+--- a/lib/routes.js
++++ b/lib/routes.js
+@@ -22,7 +22,7 @@ import { marketFetch } from './net.js';
+ import { diagnosePackageManifests } from './diagnostics.js';
+ import { BOOT_ID, cancelActive, probePnpm, progress, provisionPnpm, runDshPlugin, setBuildEnvSource, TARGET_RE, } from './dsh-cli.js';
+ import { packageOfEntryName } from './entry-identity.js';
+-import { addProfileBundle, bundlePatchInsertedIds, dropFromManifest, hasLoadableEntry, holdsNativeAddon, INBOX_BUNDLES, isDshProfileName, profileDir, readDependencyOwners, readGitResolutionCommit, readInstalled, readInstalledManifest, readInstalledPackageName, readInstalledRepoEvidence, readInstalledVersion, readLockCommits, readProfileBundles, readProfileManifestSnapshot, removeProfileBundle, restoreProfileManifest, setAllowBuilds } from './profile.js';
++import { addProfileBundle, bundlePatchInsertedIds, dropFromManifest, hasLoadableEntry, holdsNativeAddon, INBOX_BUNDLES, isDshProfileName, profileDir, readDependencyOwners, readGitResolutionCommit, readInstalled, readInstalledManifest, readInstalledPackageName, readInstalledRepoEvidence, readInstalledVersion, readLockCommits, readPatchedDependencies, readProfileBundles, readProfileManifestSnapshot, removeProfileBundle, restoreProfileManifest, setAllowBuilds } from './profile.js';
+ import { assessProfile, classifyPeer, introducedDuplicateNames, introducedRisks } from './compatibility.js';
+ import { runningAgentIds } from './agents.js';
+ import { analyzeProfile, corePackageNames } from './check.js';
+@@ -3350,6 +3350,7 @@ export function mountMarketRoutes(host, config, commandRuntime, agentsLookup, ho
+                             ? body.compatVersion
+                             : null;
+                         const restore = body.restore === true;
++                        const patchOverride = body.patchOverride === true;
+                         const manifestCapture = captureUpdateManifest();
+                         if (!manifestCapture.ok) {
+                             sendJson(response, 500, {
+@@ -3403,6 +3404,28 @@ export function mountMarketRoutes(host, config, commandRuntime, agentsLookup, ho
+                             }
+                             spec = catalogTarget;
+                         }
++                        // A package this profile patches locally. `patchedDependencies`
++                        // keys on `name@exactVersion`, so an update that moves the
++                        // install off that version silently stops applying the patch:
++                        // pnpm 11 warns and carries on, so the update SUCCEEDS and the
++                        // local fix is simply gone — the worst of both outcomes, since
++                        // nothing on screen says so. Refuse before anything is written.
++                        //
++                        // `patchOverride`, not the existing `force`: that flag already
++                        // rides along on other refusal dialogs, and reusing it would let
++                        // those dialogs bypass this without anyone choosing to.
++                        if (patchOverride !== true) {
++                            const localPatch = readPatchedDependencies(config.profile, activeProfileDir).get(name);
++                            if (localPatch !== undefined) {
++                                const patchFile = localPatch.file === '' ? '' : ` → ${localPatch.file}`;
++                                logEvent('warn', 'update-blocked', `${name}: refused — the profile patches it at ${localPatch.key}`);
++                                sendJson(response, 409, {
++                                    error: `${name} 在这个 profile 里有本地 pnpm 补丁（${localPatch.key}${patchFile}）。补丁按「包名@精确版本」钉住，所以更新会让它悄悄失效——pnpm 会装上新版本，但装的是没打补丁的原版。要先把补丁改到新版本（新版本已经自带这个修复的话，删掉这条和补丁文件即可），或者确认要覆盖它再带 patchOverride 重试。 / ${name} carries a local pnpm patch in this profile (${localPatch.key}${patchFile}). The patch is keyed on an exact version, so updating makes it stop applying: pnpm installs the new release unpatched and says nothing. Rebase the patch onto the new version first — or drop the entry and its patch file if that release already carries the fix — then retry. Passing patchOverride overrides this guard.`,
++                                    patched: localPatch,
++                                });
++                                return;
++                            }
++                        }
+                         // Replacing a package on disk under a live agent is a mixed-state
+                         // hazard the "restart" verdict cannot fix: the running module keeps
+                         // executing while its files change under it, so lazily imported
+diff --git a/lib/updates.js b/lib/updates.js
+index 1d0e02005bdb37c2cf718de466c6ac9190646fd2..022b064e00d083e97f6ff72f860fdefac6c4329f 100644
+--- a/lib/updates.js
++++ b/lib/updates.js
+@@ -7,7 +7,7 @@ import { DIST_TAG } from './channels.js';
+ import { resolveHeadCommit } from './accelerate.js';
+ import { marketFetch } from './net.js';
+ import { activeRegion } from './regions.js';
+-import { profileDir, readGitResolutionCommit, readInstalled, readInstalledVersion, readLockCommits } from './profile.js';
++import { profileDir, readGitResolutionCommit, readInstalled, readInstalledVersion, readLockCommits, readPatchedDependencies } from './profile.js';
+ import { gitCommitOfTarget, gitRefOfTarget, gitUploadPackUrl, hostedRepoKey, githubCommitOfTarget, githubRefOfTarget, isGenerationLink, isGitHostedSpec, repoOfTarget } from './sources.js';
+ const UPDATES_TTL_MS = 30 * 60 * 1000;
+ const GIT_REMOTE_HEAD_TIMEOUT_MS = 6000;
+@@ -399,6 +399,27 @@ onlineSourceFor = new Map()) {
+             result[name] = { kind: (spec.startsWith('github:') || isGitHostedSpec(spec)) ? 'github' : 'npm', version, current: null, latest: null, updateAvailable: false };
+         }
+     }));
++    // Every installed package the profile patches locally. One pass after the
++    // loop rather than a field on each branch above: the answer is the same
++    // for all of them and does not depend on which source branch produced the
++    // row, including the catch branch and the linked ones.
++    //
++    // `versionDrifted` is the load-bearing part. A `name@version` key stops
++    // matching as soon as the install moves off that version, and the row
++    // still reads as an ordinary upgradable package — which is how a local
++    // fix disappears silently rather than loudly.
++    const patches = readPatchedDependencies(profile, activeProfileDir);
++    for (const [name, entry] of patches) {
++        const status = result[name];
++        if (status === undefined)
++            continue;
++        status.patched = {
++            key: entry.key,
++            file: entry.file,
++            version: entry.version,
++            versionDrifted: entry.version !== null && status.version !== null && entry.version !== status.version,
++        };
++    }
+     updatesCache = { key: cacheKey, at: Date.now(), data: result };
+     return result;
+ }
