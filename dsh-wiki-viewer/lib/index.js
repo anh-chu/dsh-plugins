@@ -177,7 +177,7 @@ async function runManaged(ctx, argv, cwd) {
 
 async function installViewer(ctx, root, version) {
   if (existsSync(join(root, ".git"))) {
-    throw new Error(`refusing to install over the source checkout at ${root}; update it via git instead`);
+    throw new Error(`refusing to install over the source checkout at ${root}; update it via git and run pnpm build there`);
   }
   mkdirSync(join(root, ".."), { recursive: true });
   const staging = `${root}.new-${process.pid}`;
@@ -218,7 +218,9 @@ async function ensureViewer(_ctx) {
   throw new Error(
     override
       ? `wiki viewer not found at ${root}`
-      : `wiki viewer is not installed at ${root}; use Settings → Plugins → Wiki Viewer to install it`,
+      : existsSync(join(root, ".git"))
+        ? `wiki viewer source checkout at ${root} has no production build; run pnpm build in it`
+        : `wiki viewer is not installed at ${root}; use Settings → Plugins → Wiki Viewer to install it`,
   );
 }
 
@@ -289,6 +291,9 @@ function apply(ctx) {
   const grants = new Map();
   let viewerPromise;
   let updatePromise;
+  // The viewer currently serving previews. Preview-token asset requests have no
+  // grant (below), so they need a port from here instead.
+  let activeViewer = null;
 
   // Serve the settings namespace so Settings → Plugins → Plugin
   // configuration dispatches this plugin's card (which hosts the update
@@ -333,6 +338,7 @@ function apply(ctx) {
       viewer = await settleViewer();
     }
     const grant = randomUUID();
+    activeViewer = viewer;
     const rootPath = fs.processPath(root);
     grants.set(grant, { sessionId, root: rootPath, file, port: viewer.port, expiresAt: Date.now() + 10 * 60 * 1000 });
     const params = new URLSearchParams({ grant, root: rootPath });
@@ -359,6 +365,7 @@ function apply(ctx) {
         latestError,
         root,
         managed: !override,
+        checkout: !override && !installed && existsSync(join(root, ".git")),
         updateAvailable: latest !== null && (installed === null || compareVersions(latest, installed) > 0),
       },
     };
@@ -410,13 +417,33 @@ function apply(ctx) {
 
   ctx.effect(() => {
     const handler = async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://dsh.internal");
+
+      // A previewed page embeds local files through the wiki's own capability
+      // token in the URL path (`/api/assets/_p/<token>/…`). Its sandbox gives it
+      // a transient origin, so the browser strips the session cookie, marks the
+      // request cross-site, and sends `Origin: null` for scripted fetches —
+      // every one of those fails the harness Host/Origin fence (403 "forbidden")
+      // and this plugin's grant gate (400 "wiki grant required") before the wiki
+      // can authorize anything. Both gates therefore step aside for that exact
+      // path; the wiki validates the token itself (HMAC, expiry, directory
+      // scope) and answers 403 for anything invalid, so nothing is exposed.
+      if (url.pathname.startsWith(`${WIKI_ROUTE}/api/assets/_p/`)) {
+        if (!activeViewer) {
+          res.writeHead(503, { "content-type": "text/plain; charset=utf-8" });
+          res.end("wiki viewer is not running");
+          return;
+        }
+        proxyRequest(req, res, activeViewer.port, activeViewer.root ?? "", "", url.pathname, "");
+        return;
+      }
+
       const rejection = ctx.connection.requestRejection(req);
       if (rejection !== void 0) {
         res.writeHead(rejection);
         res.end(rejection === 401 ? "unauthorized" : "forbidden");
         return;
       }
-      const url = new URL(req.url ?? "/", "http://dsh.internal");
       const grant = grantFromRequest(req, url);
       const entry = grant ? grants.get(grant) : undefined;
       if (entry && entry.expiresAt <= Date.now()) {

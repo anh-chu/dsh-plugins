@@ -384,6 +384,10 @@ window.__ModuleLoader__.load({
           : info.installed === info.latest ? "Up to date"
           : `Update to ${info.latest}`;
         const row = { display: "flex", justifyContent: "space-between", gap: "0.5rem", padding: "0.15rem 0" };
+        const checkout = info?.checkout === true;
+        const disableUpdate = updating
+          || checkout && info?.latest !== null
+          || info?.managed && info?.latest !== null && info?.installed === info?.latest;
         return React.createElement("li", {
           style: { listStyle: "none", border: "1px solid var(--dsh-color-border, #e2e2e2)", borderRadius: "8px", marginBottom: "0.75rem", overflow: "hidden" }
         },
@@ -417,10 +421,19 @@ window.__ModuleLoader__.load({
               info.managed ? null : React.createElement("p", { style: { fontSize: "0.85em", opacity: "0.75" } },
                 "A custom DSH_WIKI_VIEWER_ROOT is set; update that checkout manually."
               ),
+              checkout ? React.createElement("div", null,
+                React.createElement("div", { style: row },
+                  React.createElement("span", null, "Source"),
+                  React.createElement("code", null, info.root)
+                ),
+                React.createElement("p", { style: { fontSize: "0.85em", opacity: "0.75", marginTop: "0.25rem" } },
+                  "Source checkout without a production build. Run pnpm install && pnpm build in it."
+                )
+              ) : null,
               React.createElement("div", { style: { display: "flex", gap: "0.5rem", marginTop: "0.5rem", alignItems: "center" } },
                 React.createElement("button", {
                   type: "button",
-                  disabled: updating || (info.managed && info.latest !== null && info.installed === info.latest),
+                  disabled: disableUpdate,
                   onClick: info.latest === null ? load : onUpdate
                 }, buttonLabel),
                 message !== "" ? React.createElement("span", { style: { fontSize: "0.85em" } }, message) : null
@@ -477,6 +490,12 @@ window.__ModuleLoader__.load({
         own(slots.inject("sidebar.right.pane.tab.title", () => slots.register({ name: "sidebar.right.pane.tab.title", key: BROWSER_ID }, ViewerTitle)));
         own(slots.inject("sidebar.right.pane.tab.title", () => slots.register({ name: "sidebar.right.pane.tab.title", key: FILE_ID }, ViewerTitle)));
         own(slots.inject("sidebar.right.tab.menu.item", () => slots.register({ name: "sidebar.right.tab.menu.item", id: "dsh-wiki-viewer/open", order: 20, label: "Open in Wiki Viewer" }, FileAction(ctx))));
+        own(slots.inject("settings.plugins.tab", () => slots.register({
+          name: "settings.plugins.tab",
+          id: "dsh-wiki-viewer",
+          order: 130,
+          label: "Wiki Viewer"
+        }, Card)));
         own(slots.inject("settings.plugin.item", () => slots.register({
           name: "settings.plugin.item",
           key: "dsh-wiki-viewer",

@@ -20,6 +20,10 @@ Shows the model(s) used in the current session (main or subagent) in the convers
 ### dsh-wiki-viewer (`./dsh-wiki-viewer` v0.1.0)
 Minimal DSH Web Sidebar wiki viewer integration. Its Settings → Plugins card shows the installed vs latest wiki-viewer release with an update button.
 
+On DSH 0.2 the card registers in `settings.plugins.tab` as well as the legacy `settings.plugin.item` slot, because the 0.1 key is now a silent no-op rather than an error — the card simply never appeared. When the managed root turns out to be a source checkout with no production build, both the open error and the card name the real remedy (`pnpm install && pnpm build` in the checkout) instead of pointing at an installer that deliberately refuses to overwrite a `.git` tree.
+
+The proxy also lets the wiki's `/api/assets/_p/<token>/…` preview-asset paths past the harness Host/Origin fence and this plugin's grant gate. A sandboxed HTML preview has a transient origin, so a nested frame or a scripted `fetch` from it carries no session cookie and no grant, and the harness fence rejects exactly those markers (`sec-fetch-site: cross-site`, `Origin: null`) with `403 forbidden` before the wiki is consulted. The wiki's own short-lived, directory-scoped token authorizes those reads, so the gates step aside for that path only and the wiki answers `403` for anything invalid. These requests carry no grant to look a port up from, so the handler proxies them to the viewer captured at the last `prepare`.
+
 ### dsh-claude-billing-header (`./dsh-claude-billing-header` v0.1.0)
 Host fetch patch replicating the routing-critical part of `pi-claude-oauth-adapter`: prepends `x-anthropic-billing-header` as `system[0]` on Anthropic OAuth messages calls so subscription usage bills to the plan quota instead of metered extra usage. No-op for API-key calls and when the header is already present.
 
