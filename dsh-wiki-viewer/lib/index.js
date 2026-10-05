@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { request } from "node:http";
-import z from "@deepseek-ai/schemastery";
 
 const name = "dsh-wiki-viewer";
 const inject = ["webServer", "connection"];
@@ -14,10 +13,6 @@ const WIKI_ROUTE = "/__dsh/wiki";
 // installed, which is how the viewer previously ended up unable to start.
 const WIKI_PACK = "wiki-viewer";
 const NPM_LATEST_URL = "https://registry.npmjs.org/wiki-viewer/latest";
-const SETTINGS_NS = "dsh-wiki-viewer";
-// Action-only settings card (the update button lives in the client half);
-// an empty schema still serves the namespace so the Plugins tab dispatches it.
-const SettingsSchema = z.object({});
 const DEFAULT_ROOT = join(process.env.DSH_WIKI_VIEWER_ROOT ?? join(process.env.DSH_HOME ?? homedir(), "wiki-viewer"));
 
 function failure(code, message) {
@@ -295,12 +290,11 @@ function apply(ctx) {
   // grant (below), so they need a port from here instead.
   let activeViewer = null;
 
-  // Serve the settings namespace so Settings → Plugins → Plugin
-  // configuration dispatches this plugin's card (which hosts the update
-  // button). Inert when no settings provider is composed.
-  ctx.inject(["settings"], (sctx) => {
-    sctx.settings.register(SETTINGS_NS, SettingsSchema);
-  });
+  // The card lives in the client half's settings.plugins.tab registration and
+  // talks to this half over RPC. There is deliberately no host-side settings
+  // registration: 0.2 removed `settings.register`, so the only thing it bought
+  // was a @deepseek-ai/schemastery dependency — which a `link:`-installed
+  // bundle cannot resolve, since it has no node_modules of its own.
 
   const prepare = async (payload) => {
     const sessionId = payload?.sessionId;

@@ -22,6 +22,8 @@ Minimal DSH Web Sidebar wiki viewer integration. Its Settings → Plugins card s
 
 On DSH 0.2 the card registers in `settings.plugins.tab` as well as the legacy `settings.plugin.item` slot, because the 0.1 key is now a silent no-op rather than an error — the card simply never appeared. When the managed root turns out to be a source checkout with no production build, both the open error and the card name the real remedy (`pnpm install && pnpm build` in the checkout) instead of pointing at an installer that deliberately refuses to overwrite a `.git` tree.
 
+The bundle has no dependencies of its own, so it links into the profile without a `node_modules` of its own; the 0.1-era host-side `settings.register` (which was the only reason for a `@deepseek-ai/schemastery` dependency) is gone, since 0.2 removed that face and the client's slot registration is what serves the card.
+
 The proxy also lets the wiki's `/api/assets/_p/<token>/…` preview-asset paths past the harness Host/Origin fence and this plugin's grant gate. A sandboxed HTML preview has a transient origin, so a nested frame or a scripted `fetch` from it carries no session cookie and no grant, and the harness fence rejects exactly those markers (`sec-fetch-site: cross-site`, `Origin: null`) with `403 forbidden` before the wiki is consulted. The wiki's own short-lived, directory-scoped token authorizes those reads, so the gates step aside for that path only and the wiki answers `403` for anything invalid. These requests carry no grant to look a port up from, so the handler proxies them to the viewer captured at the last `prepare`.
 
 ### dsh-claude-billing-header (`./dsh-claude-billing-header` v0.1.0)
