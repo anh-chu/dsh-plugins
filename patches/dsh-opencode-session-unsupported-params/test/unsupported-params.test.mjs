@@ -36,19 +36,18 @@ assert.equal(sent[0].prompt_cache_retention, '24h')
 assert.equal(rejectedField(400, JSON.stringify({ ...ERR, param: 'nope' }), { model: 'm' }), undefined)
 // 5b. Message-only rejection (no `param`, no "unsupported"): the reasoning_effort 400 seen in subagents.
 const RE = JSON.stringify({ type: 'invalid_request_error', message: 'Upstream request failed: [invalid_request_error] native reasoning control reasoning_effort is not allowed' })
-assert.equal(rejectedField(400, RE, { model: 'm', reasoning_effort: 'high' }), 'reasoning_effort')
-assert.equal(rejectedField(400, RE, { model: 'm' }), undefined)
+assert.equal(rejectedField(400, RE, { model: 'm', reasoning_effort: 'high' }), undefined) // protected: never dropped
+assert.equal(rejectedField(400, JSON.stringify({ message: 'foo_bar is not allowed' }), { model: 'm', foo_bar: 1 }), 'foo_bar')
 // 5c. Core fields are never learned away, and 5xx is ignored.
 assert.equal(rejectedField(400, JSON.stringify({ message: 'model is not supported' }), { model: 'm' }), undefined)
 assert.equal(rejectedField(500, RE, { reasoning_effort: 'high' }), undefined)
-// 5d. Transient field (reasoning_effort): retried without it, but not remembered.
+// 5d. Protected field (reasoning_effort): the 400 passes through, the request is sent once, nothing is learned.
 {
   const seen = []; const qq = createQuirkStore(undefined)
-  const g = patchFetch(async (u, i) => { const b = JSON.parse(i.body); seen.push(b)
-    return 'reasoning_effort' in b ? new Response(RE, { status: 400 }) : new Response('{}', { status: 200 }) },
+  const g = patchFetch(async (u, i) => { seen.push(JSON.parse(i.body)); return new Response(RE, { status: 400 }) },
     new AsyncLocalStorage(), resolveBodyRules(), qq)
   const r2 = await g('https://opencode.ai/x', { body: JSON.stringify({ model: 'glm', reasoning_effort: 'high' }) })
-  assert.equal(r2.status, 200); assert.equal(seen.length, 2); assert.equal(qq.fields('glm').size, 0)
+  assert.equal(r2.status, 400); assert.equal(seen.length, 1); assert.equal(seen[0].reasoning_effort, 'high'); assert.equal(qq.fields('glm').size, 0)
 }
 // 6. Learned entries expire.
 let t = 0; const s = createQuirkStore(undefined, () => t); s.learn('m', 'x'); assert.ok(s.fields('m').has('x'))
