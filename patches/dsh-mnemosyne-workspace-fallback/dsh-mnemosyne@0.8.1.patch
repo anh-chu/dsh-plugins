@@ -102,7 +102,7 @@ index 72bc557..ce0d373 100644
        mode: "workspace",
        namespace: null,
 diff --git a/src/index.js b/src/index.js
-index 669110b..edc8c82 100644
+index 669110b..77e8f23 100644
 --- a/src/index.js
 +++ b/src/index.js
 @@ -2132,7 +2132,10 @@ export function apply(ctx, config) {
@@ -153,3 +153,12 @@ index 669110b..edc8c82 100644
                  return sessRun("store", [payload.content, payload.source ?? "dsh", String(payload.importance ?? 0.5), "session"], target.sid);
                }
                return sessRun("store", [payload.content, payload.source ?? "dsh", String(payload.importance ?? 0.5), "session"], agentSid(exec));
+@@ -3612,7 +3626,7 @@ Automatic prompt declaration, turn sync, and prefetch follow the Mnemosyne Herme
+ - **Auto-sync** — Automatically stores user messages after each turn; add \`assistant\` to \`sync_roles\` to persist assistant replies.
+ - **Auto-prefetch** — Recalls relevant memories before each model step and injects a filtered, untrusted context block.
+ 
+-Session-scoped memories are isolated to the active DSH session. Use \`scope="global"\` for facts that should survive a new session. Existing legacy \`default\` rows should be migrated to global after upgrading to the session-scoped defaults.
++Session-scoped memories are isolated to the active DSH session. Use \`scope="workspace"\` for facts about the current project; use \`scope="global"\` only for facts that hold in every project. Existing legacy \`default\` rows should be migrated to global after upgrading to the session-scoped defaults.
+ 
+ ## Installation
+ 

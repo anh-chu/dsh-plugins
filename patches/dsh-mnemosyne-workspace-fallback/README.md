@@ -87,6 +87,13 @@ Now:
   survive a new session*;
 - the `mnemosyne_remember` parameter description says the same, and notes the
   fallback;
+- the **skill text** the plugin serves (`Session-scoped memories are isolated…`, inside
+  `src/index.js`) still carried the old sentence — *"Use `scope="global"` for facts that
+  should survive a new session"*. A session that loads the skill and never reads the tool
+  description got the rule that files project facts in the shared pool, so the skill text
+  now says what the prompt says. Found live, after the prompt fix was already loaded: a
+  Seedwise session wrote *"Seedwise app (/home/sil/seedwise/app) … use the live Expo web
+  view"* to `scope=global` at 22:58, with the corrected prompt in force;
 - the tool's `workspace` branch passed `target.sid` straight to the helper. After
   fix A an unbound directory resolves to `{mode:"default"}`, which has **no** `sid`, so
   `workspace` scope in `$HOME` would have spawned the helper with an undefined session
@@ -99,12 +106,15 @@ Now:
 node test/fallback-and-autobind.test.mjs
 ```
 
-18 assertions. It builds real fixtures (a git repo, a nested subdirectory, a
+22 assertions. It builds real fixtures (a git repo, a nested subdirectory, a
 non-repository directory, a marker directory inside a repository) and checks
 identity resolution behaviourally, plus static checks on the fallback and on the
-scope guidance (the prompt wording, the parameter description, and the unbound
-`workspace` fallback). It **fails 12 of 17 on upstream 0.8.1** and passes 18/18 with
-the patch.
+scope guidance (the prompt wording, the parameter description, the skill text, and the
+unbound `workspace` fallback). It **passes 6 and fails 15 of 21 on upstream 0.8.1** (one
+more assertion runs once binding succeeds) and passes 22/22 with the patch.
+
+The three skill-text assertions fail on a build that carries every other fix: that is
+the point of them. Run `DSH_MNEMOSYNE_DIR=<pre-fix copy> node test/…` to see it.
 
 The test asserts its own precondition that the fixture base is outside any
 repository, and uses `$HOME` rather than `/tmp` for that reason. Overrides:
@@ -172,4 +182,4 @@ cd /tmp/c && git diff --no-index --no-prefix a b > combined.patch
 ```
 
 Verified: the composition applies cleanly to pristine upstream, and that build passes both
-suites — 17 assertions for the dashboard fix, 13 for this one.
+suites — 17 assertions for the dashboard fix, 22 for this one.

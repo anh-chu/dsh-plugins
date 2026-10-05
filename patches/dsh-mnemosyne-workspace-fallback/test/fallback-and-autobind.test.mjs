@@ -137,6 +137,22 @@ const wsBody = wsBranch === -1 ? '' : toolBody.slice(wsBranch, wsBranch + 1300);
 expect(/target\.mode !== "scoped"/.test(wsBody) && /"global"\], "default"/.test(wsBody),
   'workspace scope with no bound project writes to the shared pool rather than passing an undefined sid');
 
+// The skill the plugin ships carried the OLD advice too: "Use `scope="global"` for
+// facts that should survive a new session". A session that loads the skill and never
+// reads the tool description got the rule that files project facts in the shared
+// pool, so the skill text must say what the prompt says. Found live: a Seedwise
+// session wrote "Seedwise app (/home/sil/seedwise/app) … use the live Expo web view"
+// to scope=global at 22:58, with the corrected prompt already in force.
+const skillStart = indexSrc.indexOf('Session-scoped memories are isolated');
+const skill = skillStart === -1 ? '' : indexSrc.slice(skillStart, skillStart + 700);
+expect(skill !== '', 'the plugin skill text was found');
+expect(!/for facts that should survive a new session/.test(skill),
+  'the skill text no longer sends anything durable to global');
+expect(/for facts about the current project/.test(skill),
+  'the skill text sends project facts to workspace scope');
+expect(/only for facts that hold in every project/.test(skill),
+  'the skill text reserves global for facts true in every project');
+
 // the system temp dir must never be a workspace boundary, however it is laid out
 // (this machine has a stray /tmp/.git, which is exactly the trap being guarded)
 const tmpProbe = join(tmpdir(), `mnab-probe-${process.pid}`);
