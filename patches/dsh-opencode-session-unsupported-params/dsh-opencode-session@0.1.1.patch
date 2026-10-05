@@ -52,7 +52,7 @@ diff --git a/lib/index.js b/lib/index.js
  }
  
  /** Fire-and-forget append of one debug record; failures only log a warning. */
-@@ -124,28 +157,104 @@
+@@ -124,28 +157,103 @@
    }
  }
  
@@ -82,11 +82,10 @@ diff --git a/lib/index.js b/lib/index.js
 +}
 +
 +// Fields that are never learned away: dropping them would break the request itself.
-+// Fields OpenCode rejects only on some backends (seen mid-session after many successes): retry without
-+// them for this request but never persist, or the model would silently lose reasoning for the TTL.
-+const TRANSIENT_FIELDS = new Set(['reasoning_effort', 'reasoning'])
 +
-+const CORE_FIELDS = new Set(['model', 'messages', 'input', 'stream', 'tools'])
++// Reasoning controls are protected too: the models support reasoning, so a 400 on them must
++// surface instead of silently degrading the request.
++const CORE_FIELDS = new Set(['model', 'messages', 'input', 'stream', 'tools', 'reasoning_effort', 'reasoning', 'thinking'])
 +
 +/**
 + * Name the body field an OpenCode 400 rejects, else undefined. Accepts an explicit
@@ -155,7 +154,7 @@ diff --git a/lib/index.js b/lib/index.js
 +      if (response.status !== 400) return response
 +      const field = rejectedField(response.status, await response.clone().text().catch(() => ''), body)
 +      if (field === undefined) return response
-+      if (!TRANSIENT_FIELDS.has(field)) quirks.learn(model, field) // transient: retry without it, do not remember
++      quirks.learn(model, field)
 +      delete body[field]
 +    }
 +    return send({ ...init, body: JSON.stringify(body) })
@@ -168,7 +167,7 @@ diff --git a/lib/index.js b/lib/index.js
    const als = new AsyncLocalStorage()
    const uuidBySession = new Map()
  
-@@ -155,7 +264,7 @@
+@@ -155,7 +263,7 @@
      return
    }
  
@@ -177,7 +176,7 @@ diff --git a/lib/index.js b/lib/index.js
  
    ctx.effect(() => {
      globalThis.fetch = patched
-@@ -173,8 +282,18 @@
+@@ -173,8 +281,18 @@
      if (options === undefined || options === null || typeof options !== 'object') return next()
      if (!providers.has(String(options.provider))) return next()
      const sessionId = options.sessionId
