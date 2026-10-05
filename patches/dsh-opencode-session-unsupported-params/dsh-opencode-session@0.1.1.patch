@@ -1,0 +1,187 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -25,7 +25,10 @@
+ 
+ import { AsyncLocalStorage } from 'node:async_hooks'
+ import { randomUUID } from 'node:crypto'
+-import { appendFile } from 'node:fs/promises'
++import { appendFile, writeFile } from 'node:fs/promises'
++import { readFileSync } from 'node:fs'
++import { homedir } from 'node:os'
++import { join } from 'node:path'
+ 
+ export const name = 'opencode-go-session-header'
+ 
+@@ -53,7 +56,37 @@
+   const debugFile = typeof config.debugFile === 'string' && config.debugFile.length > 0
+     ? config.debugFile
+     : undefined
+-  return { providers: new Set(providers), mode, debug, debugFile }
++  return { providers: new Set(providers), mode, debug, debugFile, bodyRules: resolveBodyRules(config.bodyRules), quirksFile: typeof config.quirksFile === 'string' ? config.quirksFile : join(homedir(), '.dsh', 'opencode-quirks.json') }
++}
++
++// Static per-model request-body rules (optional, user-supplied). Rules apply in
++// order to every request sent to opencode.ai whose JSON body `model` matches
++// the rule's case-insensitive `model` regex. `drop` removes top-level body
++// fields; `keep` restores them (a later `keep` beats an earlier `drop`).
++// Default: none. Unsupported fields are learned automatically (see quirk store).
++const DEFAULT_BODY_RULES = []
++
++export function resolveBodyRules(value) {
++  const rules = Array.isArray(value) ? value : DEFAULT_BODY_RULES
++  return rules.flatMap((rule) => {
++    try {
++      const list = (key) => (Array.isArray(rule[key]) ? rule[key].map(String) : [])
++      return [{ model: new RegExp(String(rule.model ?? '.*'), 'i'), drop: list('drop'), keep: list('keep') }]
++    } catch {
++      return [] // invalid regex: ignore the rule
++    }
++  })
++}
++
++/** Return the body fields to remove for `model` after applying all rules. */
++export function fieldsToDrop(rules, model) {
++  const drop = new Set()
++  for (const rule of rules) {
++    if (!rule.model.test(String(model))) continue
++    for (const field of rule.drop) drop.add(field)
++    for (const field of rule.keep) drop.delete(field)
++  }
++  return drop
+ }
+ 
+ /** Fire-and-forget append of one debug record; failures only log a warning. */
+@@ -124,28 +157,91 @@
+   }
+ }
+ 
++// Learned quirks: the first time OpenCode answers 400 `unsupported_parameter`
++// for a top-level body field, remember (model, field) and strip it from then on.
++// Entries expire so a provider that later adds support is rediscovered.
++const QUIRK_TTL_MS = 30 * 24 * 3600 * 1000
++
++export function createQuirkStore(file, now = Date.now) {
++  let data = {}
++  if (file) {
++    try { data = JSON.parse(readFileSync(file, 'utf8')) } catch { /* first run */ }
++  }
++  return {
++    fields(model) {
++      const out = new Set()
++      for (const [field, at] of Object.entries(data[String(model)] ?? {})) {
++        if (now() - at < QUIRK_TTL_MS) out.add(field)
++      }
++      return out
++    },
++    learn(model, field) {
++      data[String(model)] = { ...data[String(model)], [field]: now() }
++      if (file) writeFile(file, JSON.stringify(data, null, 2), 'utf8').catch(() => {})
++    },
++  }
++}
++
++/** Name the body field an OpenCode 400 rejects as unsupported, else undefined. */
++export function rejectedField(status, text, body) {
++  if (status !== 400) return undefined
++  let json
++  try { json = JSON.parse(text) } catch { return undefined }
++  const err = json?.error && typeof json.error === 'object' ? json.error : json
++  const message = String(err?.message ?? '')
++  if (!/unsupported[_ ]parameter|not supported|unknown (parameter|field)|unrecognized/i.test(`${err?.code ?? ''} ${message}`)) return undefined
++  const named = typeof err?.param === 'string' ? err.param : message.match(/"([A-Za-z_][\w]*)"/)?.[1]
++  return named && Object.prototype.hasOwnProperty.call(body, named) ? named : undefined
++}
++
+ /**
+  * Build a patched fetch that injects the header while a store is active.
+  * Header precedence mirrors native fetch: when `init.headers` is present it
+  * wins; otherwise a Request's own headers are the base.
+  */
+-export function patchFetch(original, als) {
+-  return function patchedFetch(input, init) {
++export function patchFetch(original, als, bodyRules = resolveBodyRules(), quirks = createQuirkStore()) {
++  return async function patchedFetch(input, init) {
+     const state = als.getStore()
+-    if (state && !hasSessionHeader(input, init)) {
+-      const headers = new Headers(
+-        init?.headers
+-          ?? (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined),
+-      )
+-      headers.set(SESSION_HEADER, state.value)
+-      return original.call(this, input, { ...init, headers })
++    const url = typeof input === 'string' ? input : input?.url
++    const send = (nextInit) => {
++      if (state && !hasSessionHeader(input, nextInit)) {
++        const headers = new Headers(
++          nextInit?.headers
++            ?? (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined),
++        )
++        headers.set(SESSION_HEADER, state.value)
++        return original.call(this, input, { ...nextInit, headers })
++      }
++      return original.call(this, input, nextInit)
+     }
+-    return original.apply(this, arguments)
++
++    let body
++    if (typeof url === 'string' && url.includes('opencode.ai') && typeof init?.body === 'string') {
++      try { body = JSON.parse(init.body) } catch { /* non-JSON body: pass through */ }
++    }
++    if (!body || typeof body !== 'object') return send(init)
++
++    const model = body.model
++    const strip = () => {
++      for (const field of fieldsToDrop(bodyRules, model)) delete body[field]
++      for (const field of quirks.fields(model)) delete body[field]
++    }
++    strip()
++    // Retry at most once per field OpenCode names as unsupported; bounded by body size.
++    for (let attempt = 0; attempt <= 4; attempt++) {
++      const response = await send({ ...init, body: JSON.stringify(body) })
++      if (response.status !== 400) return response
++      const field = rejectedField(response.status, await response.clone().text().catch(() => ''), body)
++      if (field === undefined) return response
++      quirks.learn(model, field)
++      delete body[field]
++    }
++    return send({ ...init, body: JSON.stringify(body) })
+   }
+ }
+ 
+ export function apply(ctx, config) {
+-  const { providers, mode, debug, debugFile } = resolveConfig(config)
++  const { providers, mode, debug, debugFile, bodyRules, quirksFile } = resolveConfig(config)
+   const als = new AsyncLocalStorage()
+   const uuidBySession = new Map()
+ 
+@@ -155,7 +251,7 @@
+     return
+   }
+ 
+-  const patched = patchFetch(originalFetch, als)
++  const patched = patchFetch(originalFetch, als, bodyRules, createQuirkStore(quirksFile))
+ 
+   ctx.effect(() => {
+     globalThis.fetch = patched
+@@ -173,8 +269,18 @@
+     if (options === undefined || options === null || typeof options !== 'object') return next()
+     if (!providers.has(String(options.provider))) return next()
+     const sessionId = options.sessionId
+-    if (sessionId === undefined || sessionId === null) return next()
+-    const value = headerValueFor(sessionId, mode, uuidBySession)
++    // Mneme entity extraction and connectivity tests call llm.stream()
++    // without a conversation sessionId. OpenCode Go still requires the
++    // header, so use one stable process-local UUID per provider for those
++    // calls. Normal conversations keep their real DSH session id.
++    const sessionKey = sessionId === undefined || sessionId === null
++      ? `sessionless:${String(options.provider)}`
++      : sessionId
++    const value = headerValueFor(
++      sessionKey,
++      sessionId === undefined || sessionId === null ? 'uuid' : mode,
++      uuidBySession,
++    )
+     if (value === undefined) return next()
+ 
+     // Reaching the adapter is the only way the actual HTTP request happens;
