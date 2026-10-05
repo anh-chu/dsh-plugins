@@ -1,0 +1,36 @@
+{
+  "name": "dsh-jev-opencode",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mount dsh-jev-prune with an OpenCode model as its judge backend.",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./*.mjs": "./*.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "judge.mjs",
+    "pilot.mjs",
+    "check.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "check": "node check.mjs",
+    "pilot": "node pilot.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "dsh-jev-prune": "*"
+  },
+  "dsh": {
+    "compatibility": {
+      "testedAgainst": "@deepseek-ai/dsh@0.1.5-rc.2",
+      "note": "Mounted by name from the standard-jev agent preset, not auto-wired into the profile. No cordis.patch.yml: the patch row it supersedes is already disabled."
+    }
+  },
+  "license": "MIT"
+}
