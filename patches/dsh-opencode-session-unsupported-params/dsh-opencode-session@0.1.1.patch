@@ -50,7 +50,7 @@ diff --git a/lib/index.js b/lib/index.js
  }
  
  /** Fire-and-forget append of one debug record; failures only log a warning. */
-@@ -124,28 +157,144 @@
+@@ -124,28 +157,171 @@
    }
  }
  
@@ -94,7 +94,8 @@ diff --git a/lib/index.js b/lib/index.js
 +
 +// Reasoning controls are protected too: the models support reasoning, so a 400 on them must
 +// surface instead of silently degrading the request.
-+const CORE_FIELDS = new Set(['model', 'messages', 'input', 'stream', 'tools', 'reasoning_effort', 'reasoning', 'thinking'])
++const PROTECTED_FIELDS = ['reasoning_effort', 'reasoning', 'thinking']
++const CORE_FIELDS = new Set(['model', 'messages', 'input', 'stream', 'tools', ...PROTECTED_FIELDS])
 +
 +/**
 + * Name the body field an OpenCode 400 rejects, else undefined. Accepts an explicit
@@ -112,6 +113,20 @@ diff --git a/lib/index.js b/lib/index.js
 +  if (typeof err?.param === 'string' && has(err.param)) return err.param
 +  // ponytail: first body key found as a whole word wins; ceiling = a message naming two fields learns one per retry.
 +  return Object.keys(body).find((k) => has(k) && new RegExp(`(^|[^A-Za-z0-9_])${k}([^A-Za-z0-9_]|$)`).test(message))
++}
++
++/**
++ * True when a 400 names a protected field (e.g. reasoning_effort) that is present in the body.
++ * These are valid for the model, so the rejection is treated as a backend glitch, not a quirk.
++ */
++export function rejectedProtected(status, text, body) {
++  if (status !== 400) return false
++  let json
++  try { json = JSON.parse(text) } catch { return false }
++  const err = json?.error && typeof json.error === 'object' ? json.error : json
++  const message = String(err?.message ?? '')
++  if (!/unsupported|not (supported|allowed|permitted)|unknown|unrecognized|invalid (parameter|field)/i.test(message)) return false
++  return PROTECTED_FIELDS.some((k) => Object.prototype.hasOwnProperty.call(body, k) && new RegExp(`(^|[^A-Za-z0-9_])${k}([^A-Za-z0-9_]|$)`).test(message))
 +}
 +
  /**
@@ -132,13 +147,13 @@ diff --git a/lib/index.js b/lib/index.js
 -      headers.set(SESSION_HEADER, state.value)
 -      return original.call(this, input, { ...init, headers })
 +    const url = typeof input === 'string' ? input : input?.url
-+    const send = (nextInit) => {
++    const send = (nextInit, suffix = '') => {
 +      if (state && !hasSessionHeader(input, nextInit)) {
 +        const headers = new Headers(
 +          nextInit?.headers
 +            ?? (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined),
 +        )
-+        headers.set(SESSION_HEADER, state.value)
++        headers.set(SESSION_HEADER, state.value + suffix)
 +        return original.call(this, input, { ...nextInit, headers })
 +      }
 +      return original.call(this, input, nextInit)
@@ -156,20 +171,31 @@ diff --git a/lib/index.js b/lib/index.js
 +      for (const field of quirks.fields(model)) delete body[field]
 +    }
 +    strip()
-+    // Retry at most once per field OpenCode names as unsupported; bounded by body size.
-+    for (let attempt = 0; attempt <= 4; attempt++) {
-+      const response = await send({ ...init, body: JSON.stringify(body) })
++    // Each pass: send; on a 400 either learn+drop a rejected unsupported field, or (for a protected
++    // field such as reasoning_effort, which the model does support) keep the body and retry up to 2
++    // times -- the second with a rotated session header to reach another backend. Bounded to 6 passes.
++    let glitch = 0
++    let suffix = ''
++    for (let pass = 0; pass < 6; pass++) {
++      const response = await send({ ...init, body: JSON.stringify(body) }, suffix)
 +      if (response.status !== 400) return response
-+      const field = rejectedField(response.status, await response.clone().text().catch(() => ''), body)
-+      if (field === undefined) return response
-+      quirks.learn(model, field)
-+      delete body[field]
-     }
--    return original.apply(this, arguments)
++      const text = await response.clone().text().catch(() => '')
++      const field = rejectedField(response.status, text, body)
++      if (field !== undefined) {
++        quirks.learn(model, field)
++        delete body[field]
++      } else if (glitch < 2 && rejectedProtected(response.status, text, body)) {
++        glitch++
++        if (glitch === 2) suffix = `-r${Date.now().toString(36)}`
++        await new Promise((r) => setTimeout(r, glitch * 500))
++      } else {
++        return response
++      }
++    }
 +    return send({ ...init, body: JSON.stringify(body) })
-   }
- }
- 
++  }
++}
++
 +/**
 + * Startup probe: send one 1-token request to each listed model that has never been probed.
 + * The request goes through the normal stream path, so a 400 naming an unsupported field is learned
@@ -195,18 +221,19 @@ diff --git a/lib/index.js b/lib/index.js
 +        quirks.markProbed(id)
 +        count++
 +      } catch (error) { log(`probe ${provider}/${id}: ${error?.message ?? error}`) }
-+    }
-+  }
+     }
+-    return original.apply(this, arguments)
+   }
 +  return count
-+}
-+
+ }
+ 
  export function apply(ctx, config) {
 -  const { providers, mode, debug, debugFile } = resolveConfig(config)
 +  const { providers, mode, debug, debugFile, bodyRules, quirksFile, probe, probeDelayMs } = resolveConfig(config)
    const als = new AsyncLocalStorage()
    const uuidBySession = new Map()
  
-@@ -155,7 +304,8 @@
+@@ -155,7 +331,8 @@
      return
    }
  
@@ -216,7 +243,7 @@ diff --git a/lib/index.js b/lib/index.js
  
    ctx.effect(() => {
      globalThis.fetch = patched
-@@ -169,12 +319,35 @@
+@@ -169,12 +346,35 @@
      }
    }, 'opencode-go-session-header.fetch-patch')
  

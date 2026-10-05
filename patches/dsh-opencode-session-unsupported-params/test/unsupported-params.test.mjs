@@ -2,7 +2,7 @@ import assert from 'node:assert'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { homedir } from 'node:os'
 const lib = process.env.PLUGIN_LIB ?? `${homedir()}/.dsh/profiles/web/node_modules/dsh-opencode-session/lib/index.js`
-const { patchFetch, resolveBodyRules, createQuirkStore, rejectedField, probeModels } = await import(lib)
+const { patchFetch, resolveBodyRules, createQuirkStore, rejectedField, rejectedProtected, probeModels } = await import(lib)
 
 const ERR = { param: 'prompt_cache_retention', type: 'invalid_request_error',
   message: 'Upstream request failed: [unsupported_parameter] "prompt_cache_retention" is not supported by this endpoint; use "prompt_cache_options"' }
@@ -41,13 +41,24 @@ assert.equal(rejectedField(400, JSON.stringify({ message: 'foo_bar is not allowe
 // 5c. Core fields are never learned away, and 5xx is ignored.
 assert.equal(rejectedField(400, JSON.stringify({ message: 'model is not supported' }), { model: 'm' }), undefined)
 assert.equal(rejectedField(500, RE, { reasoning_effort: 'high' }), undefined)
-// 5d. Protected field (reasoning_effort): the 400 passes through, the request is sent once, nothing is learned.
+// 5d. Protected field (reasoning_effort): never dropped. A glitch that clears on retry succeeds with the field kept;
+//     the second retry rotates the session header; a persistent 400 gives up after 3 sends and learns nothing.
 {
-  const seen = []; const qq = createQuirkStore(undefined)
-  const g = patchFetch(async (u, i) => { seen.push(JSON.parse(i.body)); return new Response(RE, { status: 400 }) },
-    new AsyncLocalStorage(), resolveBodyRules(), qq)
-  const r2 = await g('https://opencode.ai/x', { body: JSON.stringify({ model: 'glm', reasoning_effort: 'high' }) })
-  assert.equal(r2.status, 400); assert.equal(seen.length, 1); assert.equal(seen[0].reasoning_effort, 'high'); assert.equal(qq.fields('glm').size, 0)
+  const run = async (failTimes) => {
+    const seen = []; const hdr = []; const qq = createQuirkStore(undefined); const als = new AsyncLocalStorage()
+    const g = patchFetch(async (u, i) => { seen.push(JSON.parse(i.body)); hdr.push(new Headers(i.headers).get('x-opencode-session'))
+      return seen.length <= failTimes ? new Response(RE, { status: 400 }) : new Response('{}', { status: 200 }) },
+      als, resolveBodyRules(), qq)
+    const r = await als.run({ value: 'S1' }, () => g('https://opencode.ai/x', { body: JSON.stringify({ model: 'glm', reasoning_effort: 'high' }) }))
+    return { r, seen, hdr, qq }
+  }
+  let o = await run(1)
+  assert.equal(o.r.status, 200); assert.equal(o.seen.length, 2); assert.ok(o.seen.every((b) => b.reasoning_effort === 'high')); assert.equal(o.hdr[1], 'S1')
+  o = await run(2)
+  assert.equal(o.r.status, 200); assert.equal(o.seen.length, 3); assert.equal(o.hdr[1], 'S1'); assert.notEqual(o.hdr[2], 'S1'); assert.ok(o.hdr[2].startsWith('S1-r'))
+  o = await run(99)
+  assert.equal(o.r.status, 400); assert.equal(o.seen.length, 3); assert.ok(o.seen.every((b) => b.reasoning_effort === 'high')); assert.equal(o.qq.fields('glm').size, 0)
+  assert.ok(rejectedProtected(400, RE, { reasoning_effort: 'high' })); assert.ok(!rejectedProtected(400, RE, { model: 'm' }))
 }
 // 6. Learned entries never expire.
 let t = 0; const s6 = createQuirkStore(undefined, () => t); s6.learn('m', 'x'); s6.markProbed('m')
