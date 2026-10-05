@@ -117,7 +117,7 @@ for install. Already applied to the live web profile.
 Fixes `dsh-opencode-session` 0.1.1 sessions failing with `400 unsupported_parameter` on
 `prompt_cache_retention` for OpenCode Go models such as `glm-5.3-flash`, while DeepSeek models accept
 it. The fetch wrapper learns per-model quirks: on a 400 naming an unsupported body field it drops the
-field, retries, and remembers `(model, field)` in `~/.dsh/opencode-quirks.json` (30-day expiry). No
+field, retries, and remembers `(model, field)` in `~/.dsh/opencode-quirks.json` (no expiry). No
 model names are hard-coded; optional `bodyRules` add static drop/keep rules. `node
 test/unsupported-params.test.mjs` prints `all ok`. See the folder README. **Needs a `dsh web` restart.**
 

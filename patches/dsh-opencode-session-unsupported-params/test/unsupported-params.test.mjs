@@ -49,9 +49,9 @@ assert.equal(rejectedField(500, RE, { reasoning_effort: 'high' }), undefined)
   const r2 = await g('https://opencode.ai/x', { body: JSON.stringify({ model: 'glm', reasoning_effort: 'high' }) })
   assert.equal(r2.status, 400); assert.equal(seen.length, 1); assert.equal(seen[0].reasoning_effort, 'high'); assert.equal(qq.fields('glm').size, 0)
 }
-// 6. Learned entries expire.
-let t = 0; const s = createQuirkStore(undefined, () => t); s.learn('m', 'x'); assert.ok(s.fields('m').has('x'))
-t = 31 * 24 * 3600 * 1000; assert.ok(!s.fields('m').has('x'))
+// 6. Learned entries never expire.
+let t = 0; const s6 = createQuirkStore(undefined, () => t); s6.learn('m', 'x'); s6.markProbed('m')
+t = 10 * 365 * 24 * 3600 * 1000; assert.ok(s6.fields('m').has('x')); assert.ok(s6.probed('m'))
 // 7. Static rules still work.
 sent.length = 0
 await patchFetch(fake, new AsyncLocalStorage(), resolveBodyRules([{ model: '^kimi', drop: ['temperature'] }]), createQuirkStore(undefined))(

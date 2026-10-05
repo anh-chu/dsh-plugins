@@ -50,17 +50,16 @@ diff --git a/lib/index.js b/lib/index.js
  }
  
  /** Fire-and-forget append of one debug record; failures only log a warning. */
-@@ -124,28 +157,145 @@
+@@ -124,28 +157,144 @@
    }
  }
  
 +// Learned quirks: the first time OpenCode answers 400 `unsupported_parameter`
 +// for a top-level body field, remember (model, field) and strip it from then on.
-+// Entries expire so a provider that later adds support is rediscovered.
-+const QUIRK_TTL_MS = 30 * 24 * 3600 * 1000
++// Entries never expire: a model id keeps its behaviour. Delete an entry from the file to re-test it.
 +const PROBED_KEY = '__probed' // reserved: models already probed at startup
 +
-+export function createQuirkStore(file, now = Date.now) {
++export function createQuirkStore(file, now = Date.now) { // `now` stamps entries for debugging only
 +  let data = {}
 +  if (file) {
 +    try { data = JSON.parse(readFileSync(file, 'utf8')) } catch { /* first run */ }
@@ -71,14 +70,14 @@ diff --git a/lib/index.js b/lib/index.js
 +    fields(model) {
 +      const out = new Set()
 +      if (String(model) === PROBED_KEY) return out
-+      for (const [field, at] of Object.entries(data[String(model)] ?? {})) {
-+        if (now() - at < QUIRK_TTL_MS) out.add(field)
++      for (const field of Object.keys(data[String(model)] ?? {})) {
++        out.add(field)
 +      }
 +      return out
 +    },
 +    probed(model) {
 +      const at = data[PROBED_KEY]?.[String(model)]
-+      return at !== undefined && now() - at < QUIRK_TTL_MS
++      return at !== undefined
 +    },
 +    markProbed(model) {
 +      data[PROBED_KEY] = { ...data[PROBED_KEY], [String(model)]: now() }
@@ -172,7 +171,7 @@ diff --git a/lib/index.js b/lib/index.js
  }
  
 +/**
-+ * Startup probe: send one 1-token request to each listed model that has no fresh probe record.
++ * Startup probe: send one 1-token request to each listed model that has never been probed.
 + * The request goes through the normal stream path, so a 400 naming an unsupported field is learned
 + * by patchFetch before any real turn needs that model. Sequential, so it never bursts the API.
 + * @returns the number of models probed.
@@ -207,7 +206,7 @@ diff --git a/lib/index.js b/lib/index.js
    const als = new AsyncLocalStorage()
    const uuidBySession = new Map()
  
-@@ -155,7 +305,8 @@
+@@ -155,7 +304,8 @@
      return
    }
  
@@ -217,7 +216,7 @@ diff --git a/lib/index.js b/lib/index.js
  
    ctx.effect(() => {
      globalThis.fetch = patched
-@@ -169,12 +320,35 @@
+@@ -169,12 +319,35 @@
      }
    }, 'opencode-go-session-header.fetch-patch')
  
