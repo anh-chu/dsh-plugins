@@ -84,7 +84,16 @@ This copy is a local fork of `dsh-notepad` 0.1.1, installed into the web profile
    is open) publishes `props.sessionId` into a module-level store the overlay panel subscribes to.
    The panel also now opens on the session page, matching the tools' default.
 
+5. **Line-level removal, and a standing instruction to prune.** `notepad_write` gained
+   `mode=remove` with `match=...`: every line containing that text (case-insensitive) is deleted
+   and the count is reported; a match that hits nothing writes nothing. This exists because
+   `mode=replace` cannot prune safely — the injected block shows only the newest
+   `SECTION_MAX_BYTES`, so a rewrite built from what the model can see would silently discard the
+   older lines it never saw. The prompt block now also tells the model to remove finished,
+   resolved or superseded notes, so clearing happens as part of normal work rather than on
+   request. Nothing expires on its own: pages have no TTL and no size cap.
+
 Check for the section: `node tests/section.test.mjs`.
 
 Do not reinstall this plugin by its npm name - `dsh plugin --profile web add dsh-notepad` would
-restore the upstream package and drop all four changes. Re-add it by the `link:` path instead.
+restore the upstream package and drop all five changes. Re-add it by the `link:` path instead.

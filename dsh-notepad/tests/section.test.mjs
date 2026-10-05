@@ -13,11 +13,11 @@ const end = src.indexOf('// ---- Plugin body');
 assert.ok(start > 0 && end > start, 'helpers block not found in lib/index.js');
 
 const pages = new Map();
-const { renderNotepadSection, parentWriteRefusal, SECTION_MAX_BYTES } = new Function(
+const { renderNotepadSection, parentWriteRefusal, removeMatchingLines, SECTION_MAX_BYTES } = new Function(
   'readNotes',
   'scopeKeyOf',
   'Buffer',
-  `${src.slice(start, end)}\nreturn { renderNotepadSection, parentWriteRefusal, SECTION_MAX_BYTES };`,
+  `${src.slice(start, end)}\nreturn { renderNotepadSection, parentWriteRefusal, removeMatchingLines, SECTION_MAX_BYTES };`,
 )(
   (key) => pages.get(key) ?? '',
   (scope, sessionId) => `${scope}:${sessionId}`,
@@ -42,6 +42,7 @@ assert.match(empty, /notepad_write/, 'write nudge');
 assert.match(empty, /notepad_read/, 'read nudge');
 assert.match(empty, /survive context compaction/);
 assert.match(empty, /long-term memory/, 'keeps the notepad/long-term memory split');
+assert.match(empty, /mode=remove/, 'standing prune instruction');
 
 // 3) Notes are rendered back verbatim.
 pages.set('session:s1', 'goal: ship the fix\nbranch: lane/fix\n');
@@ -97,5 +98,20 @@ assert.match(parentWriteRefusal({ sessionId: 'parent-1' }, child), /read-only/);
 assert.equal(parentWriteRefusal({ sessionId: 's4' }, child), undefined, 'own page writable');
 assert.equal(parentWriteRefusal({}, child), undefined, 'default target writable');
 assert.equal(parentWriteRefusal({ sessionId: 'parent-1' }, agentContext('s4').agent), undefined, 'no lineage, nothing to refuse');
+
+// 11) Line-level removal: the only way finished state leaves a page without a full rewrite.
+const page = 'goal: ship the fix\nbranch: lane/fix\ndone: tests pass\n';
+const pruned = removeMatchingLines(page, 'branch');
+assert.equal(pruned.removed, 1, 'reports how many lines went');
+assert.ok(!pruned.text.includes('lane/fix'), 'matching line removed');
+assert.ok(pruned.text.includes('goal: ship the fix') && pruned.text.includes('done: tests pass'), 'other lines kept');
+assert.equal(removeMatchingLines(page, 'BRANCH').removed, 1, 'case-insensitive');
+assert.equal(removeMatchingLines(page, 'nothing-here').removed, 0, 'no match reports zero');
+assert.equal(removeMatchingLines(page, 'nothing-here').text, page, 'no match leaves the text alone');
+assert.equal(removeMatchingLines(page, '').removed, 0, 'empty match is inert');
+assert.equal(removeMatchingLines(page, '').text, page, 'empty match leaves the text alone');
+const cleared = removeMatchingLines('a\nb\n', 'a');
+assert.equal(cleared.removed, 1);
+assert.equal(cleared.text, 'b\n', 'removal keeps the trailing newline shape');
 
 console.log('section.test.mjs: all checks passed');

@@ -225,6 +225,21 @@ function parentWriteRefusal(args, agent) {
   return undefined;
 }
 
+/**
+ * Drop every line containing `match` (case-insensitive). This is how finished or superseded
+ * working state leaves a page: `mode=replace` cannot do it safely, because the injected block
+ * shows only the newest SECTION_MAX_BYTES of the page, so a rewrite built from what the model
+ * can see would silently discard the older lines it never saw. Returns the surviving text and
+ * how many lines went.
+ */
+function removeMatchingLines(text, match) {
+  const needle = String(match ?? "").toLowerCase();
+  if (needle === "") return { text, removed: 0 };
+  const lines = text.split("\n");
+  const kept = lines.filter((line) => !line.toLowerCase().includes(needle));
+  return { text: kept.join("\n"), removed: lines.length - kept.length };
+}
+
 /** Keep the tail of `text` within `maxBytes` UTF-8 bytes, without splitting a code point. */
 function tailWithinBytes(text, maxBytes) {
   let i = text.length;
@@ -261,6 +276,7 @@ function renderNotepadSection(context) {
     "<notepad>",
     "This session's working scratchpad; re-sent every request, so notes in it survive context compaction.",
     "Record working state you must not lose - the current goal, decisions and why, file paths, commands, ids, open threads - with notepad_write (mode=append). Read it with notepad_read or notepad_search before answering anything about earlier work in this session; do not trust the compacted transcript for those details.",
+    "Delete notes that are finished, resolved or superseded with notepad_write (mode=remove, match=...), so the page stays short and only current state occupies this space.",
     "Facts that should outlive this session belong in long-term memory instead, not here.",
   ];
   if (body.trim() === "") {
@@ -476,10 +492,11 @@ function apply(ctx) {
   }));
   tools.register(defineTool({
     name: "notepad_write",
-    description: "Write to or append to the persistent notepad (the sticky note pinned to the right side of the dsh Web GUI, stored under ~/.dsh/notepad/). By default writes to the current session's isolated notepad page (each Agent session keeps its own working memory without interference); scope=global writes to the global page. mode=replace overwrites the whole file; mode=append appends at the end with per-line dedupe. timestamp=true prefixes each line with [MM-DD HH:mm].",
+    description: "Write to, append to, or prune the persistent notepad (the sticky note pinned to the right side of the dsh Web GUI, stored under ~/.dsh/notepad/). By default writes to the current session's isolated notepad page (each Agent session keeps its own working memory without interference); scope=global writes to the global page. mode=replace overwrites the whole file; mode=append appends at the end with per-line dedupe; mode=remove deletes every line containing `match`, which is how finished or superseded notes are cleared without rewriting the page. timestamp=true prefixes each line with [MM-DD HH:mm].",
     parameters: {
-      text: { type: "string", required: true, description: "The note content to write (may be multiple lines)" },
-      mode: { type: "string", description: "replace (default, overwrites the whole file) or append (appends at the end, deduped by line)" },
+      text: { type: "string", description: "The note content to write (may be multiple lines); required for replace and append, ignored by mode=remove" },
+      mode: { type: "string", description: "replace (default, overwrites the whole file), append (appends at the end, deduped by line), or remove (deletes every line containing `match`)" },
+      match: { type: "string", description: "With mode=remove: every line containing this text (case-insensitive) is deleted" },
       timestamp: { type: "string", description: "When true, prefixes each written line with a [MM-DD HH:mm] timestamp (default false)" },
       scope: { type: "string", description: "Scope: session (default, the current session's isolated page) or global (shared by all sessions)" },
       sessionId: { type: "string", description: "Optional with scope=session: the target session id; omitted means the current session" }
@@ -490,6 +507,14 @@ function apply(ctx) {
       if (refusal !== undefined) throw new Error(refusal);
       const key = resolveToolScope(args, exec);
       const current = readNotes(key);
+      if (args.mode === "remove") {
+        const match = String(args.match ?? "").trim();
+        if (match === "") return "mode=remove needs a non-empty match; nothing was removed.";
+        const result = removeMatchingLines(current, match);
+        if (result.removed === 0) return `No line containing "${match}" was found; nothing was removed (${key}).`;
+        writeNotes(result.text, key, void 0, false);
+        return `Removed ${result.removed} line(s) containing "${match}" (${key}).`;
+      }
       let incoming = String(args.text ?? "");
       if (args.timestamp === "true" || args.timestamp === true) {
         const d = new Date();
