@@ -272,3 +272,13 @@ for facts that hold in every project. Both patch files regenerated against a reb
 the profile copy of the combined patch updated. Test is 22 assertions; three fail on a build that
 carries every other fix. Commit `0817fa3`. **Needs a `dsh` restart, which the owner performs — do
 not restart the service.**
+
+**Decision: behaviour guard (2026-10-05).** The owner chose a note in the tool result over
+automatic redirection, and accepted the 7-row curated deletion (the deleting session had reasons:
+the rows described `agent-browser` and `chatgpt-web-consult`, both since replaced). A
+`scope=global` write from a session inside a bound workspace now stores the row exactly as asked and
+appends a note naming the workspace and pointing at `scope=workspace`. It is limited to bound
+workspaces, so an unbound `$HOME` session gets no note and nothing is misrouted. Test: 24
+assertions, five of which fail on a build carrying every other fix. Commit `88e81ec`. Both the
+skill-text fix and this guard load on the next `dsh` restart, which the owner performs; the standing
+note never to restart the service is respected.
