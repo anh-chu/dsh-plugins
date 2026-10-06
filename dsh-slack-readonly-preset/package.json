@@ -1,0 +1,15 @@
+{
+  "name": "@local/dsh-slack-readonly-preset",
+  "version": "1.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./guard": "./slack-readonly-guard.mjs",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
