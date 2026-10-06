@@ -78,7 +78,9 @@ only and is left untouched to keep the diff small):
    - The **header self-update button** is suppressed for a patched dshmarket,
      which is active right now for 1.66.5 → 1.66.9 and would be refused.
 
-   Eleven new locale keys, added to **both** the zh and en dictionaries.
+   Nine new locale keys, added to **both** the zh and en dictionaries (the
+   `patched*` three and the `localChange*` six). Section 5 adds two more, for
+   a total of eleven.
 
 5. **Fork upstream awareness** — a second post-pass in `lib/updates.js`, over
    `file:` **and** `link:` installs, attaching `upstream: { repo, latest,
