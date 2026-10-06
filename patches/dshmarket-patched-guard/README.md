@@ -56,14 +56,21 @@ only and is left untouched to keep the diff small):
    - `batchUpdatableNames` excludes patched rows, matching the existing
      `restoreRequired` filter. Patched packages stay **visible** in the row list
      and in the "N updates available" notice; only the batch action skips them.
-   - A **banner at the top of the Installed tab**, in the same warn styling the
-     market already uses for its broken-plugin notice. Warn-coloured and naming
-     the plugins when a patched plugin has an update pending; otherwise one
-     quiet grey line counting them. The at-risk list is read from `updates`
-     directly, not from `updatableNames` — that list already drops `selfName`,
-     which would hide dshmarket's own update.
-   - A **per-row chip** carrying the version the fix is welded to
-     (`patched 0.8.1`), tooltip naming the `.patch` file and the rule.
+   - A **"local changes" panel at the top of the Installed tab**: every patched
+     package and every fork in one ranked list — patch-will-be-lost first, then
+     fork-behind-upstream, then the ones that are merely local. The header turns
+     warn-coloured when anything in it needs action.
+   - A **`N local changes` chip in the market header**, which persists across
+     tabs. The market opens on Discover, so without it the panel is one
+     navigation away and invisible from where the user actually lands. The chip
+     switches to Installed, and is primary-coloured only when something needs
+     action.
+   - The at-risk list is read from `updates` directly, not from
+     `updatableNames` — that list already drops `selfName`, which would hide
+     dshmarket's own update.
+   - The earlier per-row chips (`patched 0.8.1`, `upstream v1.2.1`) remain, but
+     they are not the primary surface: a chip on each of ~50 rows makes the user
+     hunt for the handful that matter, which is what the panel exists to fix.
    - The **Update button on a patched row** becomes a `metaTag` reading
      `v0.9.0 waiting · rebase patch first` instead of an active button. A
      disabled `<button>` shows no tooltip in most browsers, so the hint has to
@@ -71,7 +78,7 @@ only and is left untouched to keep the diff small):
    - The **header self-update button** is suppressed for a patched dshmarket,
      which is active right now for 1.66.5 → 1.66.9 and would be refused.
 
-   Six new locale keys, added to **both** the zh and en dictionaries.
+   Eleven new locale keys, added to **both** the zh and en dictionaries.
 
 5. **Fork upstream awareness** — a second post-pass in `lib/updates.js`, over
    `file:` **and** `link:` installs, attaching `upstream: { repo, latest,
