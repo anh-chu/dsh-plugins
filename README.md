@@ -53,9 +53,9 @@ Fork snapshot of [ICCuse/dsh-notepad](https://github.com/ICCuse/dsh-notepad) 0.1
 
 ### dsh-jev-opencode (`./dsh-jev-opencode` v0.1.0)
 
-**Retained experiment — not mounted, and known not to be trustworthy.** This wrapper was mounted in the `standard-jev` preset and reverted on 2026-09-28. It works mechanically, but the judge is unstable: eight consecutive calls for the *same* question returned `noul` 1, 0.5, 0.5, 0.9, 1, 0.5, 1, so the verdict flips the pruning decision at random and does so silently — a wrong verdict is indistinguishable from a right one. The wrapper and its pilot are kept here for a future calibrated attempt, not because they are usable. `standard-jev` currently mounts plain `dsh-jev-prune` instead, which is itself inert on this machine because its `JevClient` needs a `TYPESAFE_API_KEY` that is not present, so it logs `未配置 TYPESAFE_API_KEY —— 插件已加载但不介入裁剪` and falls back to the size-based `tool-result-pruner`. Do not mount this expecting the semantic layers to work until the stability problem is solved.
+**Retained experiment — not mounted, and known not to be trustworthy.** This wrapper was mounted in the `standard-jev` preset and reverted on 2026-09-28. It works mechanically, but the judge is unstable: eight consecutive calls for the *same* question returned `noul` 1, 0.5, 0.5, 0.9, 1, 0.5, 1, so the verdict flips the pruning decision at random and does so silently — a wrong verdict is indistinguishable from a right one. The wrapper and its pilot are kept here for a future calibrated attempt, not because they are usable. `standard-jev` still names plain `dsh-jev-prune` instead, but that package was uninstalled on 2026-09-28 (`.dsh-market/log.ndjson`) and sits in no profile on this machine, so the row cannot mount at all; the reason the old note gave for its inertness is also stale — `TYPESAFE_API_KEY` is absent from the process environment, but DSH's credential store holds it (`oc_sk_…`, an OpenCode Zen key), which is what `dsh-jev-tools` resolves (see the `dsh-jev-tools` note under *Install*). Do not mount this expecting the semantic layers to work until the stability problem is solved.
 
-Mounts [`dsh-jev-prune`](https://github.com/yangyu666/dsh-jev-prune) with an OpenCode Go model as its judge backend, so the semantic pruning layers work without a TypeSafe key. A wrapper is needed because `dsh-jev-prune` reads its verdicts from a `JevClient` whose replacement points — `deps.judge` (`index.js:568`) and `fetchImpl` (`jev.js:148`) — are function parameters, not config keys, and Cordis only ever calls `(ctx, config)`; nothing in `cordis.yml` can select a different backend. This package re-exports the plugin's own `Config` and forwards an OpenCode-backed judge into `deps.judge`, leaving the pruning logic untouched. `judge.mjs` handles two things the raw endpoint requires or gets wrong: OpenCode Go answers `400 MissingSessionID` without an `x-opencode-session` header, so a process-stable UUID is sent; and these models sometimes answer with a count (a `400` for a 400-line file) where a probability is expected, which `dsh-jev-prune` would accept because it tests only `Number.isFinite` (`jev.js:274`) and would then mis-rank pruning, so values are clamped to `(0,1)` here. `max_tokens` is 4000 because `deepseek-v4-flash` bills a long `reasoning_content` against the same budget and at 400 the budget was spent before `content` was written, returning an empty string. The **free Zen tier cannot be used**: `https://opencode.ai/zen/v1` answers `403 FreeTierError: OpenCode's free tier can only be used from within OpenCode`, so only the Go route serves external clients and the free models in the profile's `opencode` provider are not usable as a judge. Verification is `node check.mjs` (unit checks over clamping, parsing and transport against a fake fetch, no key needed) plus `node pilot.mjs` (5 live runs × 5 questions); the pilot saw 25/25 values in range with none at a boundary, max run-to-run spread 0.20, and semantically correct ordering (the test-failure result scored 0.02–0.05 and must not prune, the duplicated read 0.95–0.99) — but that pilot measured *range* and *ordering across distinct questions*, not *repeatability*, and repeatability is what failed (see the status note above). A pilot is not a calibration study: `keepThreshold: 0.5` is only as good as the probabilities behind it, and these probabilities are not yet stable enough to rank on. Install with `dsh plugin --profile web add file:/home/sil/dsh-plugins/dsh-jev-opencode`, then mount it **in place of** `dsh-jev-prune` in `~/.dsh/.agent-presets/standard-jev/agent.cordis.yml` inside the existing `compaction` isolate group (`- id: jev-prune`, `name: dsh-jev-opencode`), and restart the DSH host; confirm with the `jev_prune_status` tool and the host log's `[jev-opencode] judging via …` line. There is deliberately no `cordis.patch.yml` — the patch row it supersedes is already disabled. `package.json` records `testedAgainst: @deepseek-ai/dsh@0.1.5-rc.2`; it has not been re-verified on 0.2.0-rc.2.
+Mounts [`dsh-jev-prune`](https://github.com/yangyu666/dsh-jev-prune) with an OpenCode Go model as its judge backend, so the semantic pruning layers work without a TypeSafe key. A wrapper is needed because `dsh-jev-prune` reads its verdicts from a `JevClient` whose replacement points — `deps.judge` (`index.js:568`) and `fetchImpl` (`jev.js:148`) — are function parameters, not config keys, and Cordis only ever calls `(ctx, config)`; nothing in `cordis.yml` can select a different backend. This package re-exports the plugin's own `Config` and forwards an OpenCode-backed judge into `deps.judge`, leaving the pruning logic untouched. `judge.mjs` handles two things the raw endpoint requires or gets wrong: OpenCode Go answers `400 MissingSessionID` without an `x-opencode-session` header, so a process-stable UUID is sent; and these models sometimes answer with a count (a `400` for a 400-line file) where a probability is expected, which `dsh-jev-prune` would accept because it tests only `Number.isFinite` (`jev.js:274`) and would then mis-rank pruning, so values are clamped to `(0,1)` here. `max_tokens` is 4000 because `deepseek-v4-flash` bills a long `reasoning_content` against the same budget and at 400 the budget was spent before `content` was written, returning an empty string. The **free Zen tier cannot be used**: `https://opencode.ai/zen/v1` answers `403 FreeTierError: OpenCode's free tier can only be used from within OpenCode`, so only the Go route serves external clients and the free models in the profile's `opencode` provider are not usable as a judge. The System One route is a different path and does serve this host: `https://opencode.ai/zen/v1/systemone` with model `jev-1.13-free` answered HTTP 200 for the credential in this machine's store on 2026-10-06, and that is the route `dsh-jev-tools` uses. That does not make the `dsh-jev-opencode` backend above usable. Verification is `node check.mjs` (unit checks over clamping, parsing and transport against a fake fetch, no key needed) plus `node pilot.mjs` (5 live runs × 5 questions); the pilot saw 25/25 values in range with none at a boundary, max run-to-run spread 0.20, and semantically correct ordering (the test-failure result scored 0.02–0.05 and must not prune, the duplicated read 0.95–0.99) — but that pilot measured *range* and *ordering across distinct questions*, not *repeatability*, and repeatability is what failed (see the status note above). A pilot is not a calibration study: `keepThreshold: 0.5` is only as good as the probabilities behind it, and these probabilities are not yet stable enough to rank on. Install with `dsh plugin --profile web add file:/home/sil/dsh-plugins/dsh-jev-opencode`, then mount it **in place of** `dsh-jev-prune` in `~/.dsh/.agent-presets/standard-jev/agent.cordis.yml` inside the existing `compaction` isolate group (`- id: jev-prune`, `name: dsh-jev-opencode`), and restart the DSH host; confirm with the `jev_prune_status` tool and the host log's `[jev-opencode] judging via …` line. There is deliberately no `cordis.patch.yml` — the patch row it supersedes is already disabled. `package.json` records `testedAgainst: @deepseek-ai/dsh@0.1.5-rc.2`; it has not been re-verified on 0.2.0-rc.2.
 
 ### dsh-slack-readonly-preset (`./dsh-slack-readonly-preset`, package `@local/dsh-slack-readonly-preset` v1.0.1)
 
@@ -109,7 +109,7 @@ in this repo and `file:` for a fork you vendor.
 
 ### Installed, but not from this repo
 
-Verified against the live profile on 2026-10-03:
+Verified against the live profile on 2026-10-03, and 2026-10-06 for `dsh-jev-tools`:
 
 | Package | Live specifier | Note |
 | --- | --- | --- |
@@ -117,6 +117,7 @@ Verified against the live profile on 2026-10-03:
 | `dsh-wiki-viewer` | `file:/home/sil/guppi/dsh-wiki-viewer` | duplicate copy outside the repo; the repo copy is byte-identical |
 | `@opencode2dsh/dsh-plugin` | `file:~/.dsh/dsh-plugins/opencode2dsh-dsh-plugin-0.3.3-pr25-fix5.tgz` | packed tarball, not the `dsh-opencode2dsh/` folder |
 | `dsh-wenlan` | not a dependency | documented below and present in this repo, but not installed in this profile |
+| `dsh-jev-tools` | `^0.1.13` | npm package, not a folder in this repo; its profile override row id must equal the package name — see below |
 
 The two duplicate paths predate the monorepo and are the ones the profile actually loads. Pointing
 them at the repo copies would make this repo the single source of truth, but it is a live-profile
@@ -124,6 +125,39 @@ change: it needs `pnpm install` (never mid-turn — it rewrites hoisted `node_mo
 lazy imports until a restart) and then a `dsh web` restart.
 
 Note: if you do install `dsh-wenlan`, its `cordis.patch.yml` contains absolute local paths (`/home/sil/...`). Adjust `command` and `args` to your machine before use.
+
+#### `dsh-jev-tools`: mount row id
+
+`dsh-jev-tools` is the plugin that runs the semantic layers here — tool-result pruning, injection
+screening, skill suggestion, `jev_ask` / `jev_gate`. Since 0.1.12 it mounts under the row id
+**`dsh-jev-tools`**, the package name, because DSH publishes a bundle's settings namespace by mount
+row id while the plugin's own settings card is keyed by package name; the two have to agree.
+
+A profile patch row that still says `id: jev-tools` matches no entry. The only trace is a
+`patch: entry "jev-tools" not found` line on stderr, and `dsh web`'s stderr is a socket, so the row
+is dropped in silence. The plugin then falls back to its defaults — `https://api.typesafe.ai`,
+model `jev-latest`, key ref `TYPESAFE_API_KEY` — and this machine's `TYPESAFE_API_KEY` is an
+OpenCode Zen key (`oc_sk_…`), which `api.typesafe.ai` answers with `401 authentication_error`. That
+is the 2026-10-06 failure: the market updated the plugin 0.1.11 → 0.1.13 at 09:42 — 0.1.11 had been
+held back since 2026-09-30 and still mounted as `jev-tools`, so this was the first start on the
+renamed row id. The judgment ledger's last success is 09:13, its first `unauthorized` skip 09:49.
+
+The working override, in `~/.dsh/profiles/web/cordis.patch.yml`:
+
+```yaml
+- id: dsh-jev-tools      # the package name; `jev-tools` matches nothing
+  config:
+    baseUrl: "https://opencode.ai/zen"
+    model: "jev-1.13-free"
+```
+
+The key ref stays at its default: Zen checks the key, and this one passes there. Check the row
+without a restart by composing the tree offline — `dsh --profile web --dump-config` prints it as
+`# == dsh-jev-tools, patched by …/cordis.patch.yml` with the Zen endpoint. The profile patch is read
+at boot only (`composeProfile` in `profile-boot-*.js`) and nothing watches the file, so a running
+`dsh web` keeps the old tree until it restarts. Expect 429s under load from the Zen free tier: the
+ledger shows a burst from 02:09 to 06:45 on 2026-10-06, about 15 s per attempt with the plugin's own
+retries.
 
 ## Patches (third-party fixes, pnpm `patchedDependencies` pattern)
 
