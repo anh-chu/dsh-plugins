@@ -240,6 +240,11 @@ window.__ModuleLoader__.load({
           })));
     }
 
+    /** The one op a write sends: the exact leaf, as an array of keys. Pure, so a gate can check it. */
+    function setOp(path, value) {
+      return { op: 'set', path: Array.from(path), value };
+    }
+
     function Panel({ form, describe }) {
       const [snapshot, setSnapshot] = React.useState(() => form.getSnapshot());
       const [fields, setFields] = React.useState(() => schemaFields(describe));
@@ -260,18 +265,19 @@ window.__ModuleLoader__.load({
       globals.sort(([a], [b]) => a.localeCompare(b));
 
       /**
-       * Write one scalar field at a path inside this entry's section.
+       * Write one scalar field. `path` is an ARRAY of keys, never a dotted string.
        *
-       * `form.set` takes a scalar field name, and the panel had been passing a whole
-       * module object, which the host refuses ("the host refused admit.output").
-       * A path op names exactly the leaf being changed, so `mutate` is the right
-       * call for a nested field, and it is atomic under one revision fence.
+       * Module ids contain a dot (`admit.output`), and the schema keys the module section
+       * by that whole id. Splitting `admit.output.enabled` on dots named the path
+       * `['admit', 'output', 'enabled']`, which the host refused as "not volatile" for
+       * every module whose id has a dot, so no module could be toggled from the page.
+       * `form.mutate` takes path ops, so the exact leaf is named and the write is atomic
+       * under one revision fence.
        */
       const write = (path, value) => {
-        const ops = [{ op: 'set', path: path.split('.'), value }];
-        Promise.resolve(form.mutate(ops)).then(
-          (accepted) => { if (accepted !== true) setError(`the host refused ${path}`); },
-          (failure) => setError(`${path}: ${failure?.message ?? failure}`),
+        Promise.resolve(form.mutate([setOp(path, value)])).then(
+          (accepted) => { if (accepted !== true) setError(`the host refused ${path.join(' / ')}`); },
+          (failure) => setError(`${path.join(' / ')}: ${failure?.message ?? failure}`),
         );
       };
 
@@ -308,8 +314,8 @@ window.__ModuleLoader__.load({
             id,
             section: value,
             help: helpFor(id),
-            onToggle: (next) => write(`${id}.enabled`, next),
-            onWrite: (key, next) => write(`${id}.${key}`, next),
+            onToggle: (next) => write([id, 'enabled'], next),
+            onWrite: (key, next) => write([id, key], next),
           })),
         sectionTitle('Global settings'),
         globals.map(([key, value]) => h(Row, {
@@ -320,7 +326,7 @@ window.__ModuleLoader__.load({
           name: key,
           value,
           title: fields.get(key)?.title ?? humanize(key),
-          onWrite: (next) => write(key, next),
+          onWrite: (next) => write([key], next),
         }))));
     }
 
@@ -343,6 +349,8 @@ window.__ModuleLoader__.load({
        * logic that decides whether the operator sees a description or a bare name.
        */
       __schemaFields: schemaFields,
+      /** Test hook: the op a write sends, so a gate can assert a dotted module id stays one key. */
+      __setOp: setOp,
     };
   },
 });
