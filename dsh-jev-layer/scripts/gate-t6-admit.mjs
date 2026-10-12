@@ -184,6 +184,20 @@ assert.ok(!CTX_ON.test(source), 'admit.output must not call ctx.on; the registry
   assert.equal(ledger[0].decision, 'shadow');
 }
 
+// ── the recorded mode is the mode in force, for every outcome ──────────────
+// keep-everything and prune used to hardcode 'enforce', so a shadow host wrote rows that
+// claimed it had been enforcing. A uniformly low-scoring answer makes the module keep everything.
+{
+  const keepAll = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`s${i}`, 0.9]));
+  for (const shadow of [true, false]) {
+    const { api, ledger } = makeApi({ shadow, answers: keepAll });
+    await admitOutput.handle(EVENT, api);
+    assert.equal(ledger.length, 1, `one row (shadow=${shadow})`);
+    assert.equal(ledger[0].decision, 'keep-everything', 'every segment is relevant, so nothing is cut');
+    assert.equal(ledger[0].mode, shadow ? 'shadow' : 'enforce', `a keep-everything row records the real mode (shadow=${shadow})`);
+  }
+}
+
 // ── a refused budget keeps everything and costs no request ─────────────────
 {
   const { api, ledger, calls } = makeApi({ acquire: false });

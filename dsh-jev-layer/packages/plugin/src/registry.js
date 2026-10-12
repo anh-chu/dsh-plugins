@@ -249,17 +249,94 @@ export function createRegistry({ modules, ctx, config, core, settleMs }) {
   // ── module api ─────────────────────────────────────────────────────────
 
   /**
-   * The `tools` service, or `null` when this host has none.
+   * Registrations the harness refused, waiting for the tool set to change.
+   *
+   * A tool name can be taken at boot by another plugin (`dsh-jev-tools` owns `jev_ask` and
+   * `jev_gate`). The harness throws "already registered", and the modules that register a
+   * tool caught that and only logged it, so the module showed as started while its tool did
+   * not exist. Switching the other plugin off freed the name, but nothing tried again, so
+   * the tool stayed missing. A refused registration now stays pending, is retried on the
+   * harness's `tools/change` event, and is reported in `state()` as a `warning`.
+   */
+  const pendingTools = new Set();
+  let stopWatchingTools = null;
+
+  function retryPendingTools() {
+    for (const entry of [...pendingTools]) {
+      if (entry.attempt()) {
+        pendingTools.delete(entry);
+        warn(`[dsh-jev-layer] ${entry.name} is now registered for module "${entry.moduleId}"`);
+      }
+    }
+    if (pendingTools.size === 0 && typeof stopWatchingTools === 'function') {
+      const stopWatching = stopWatchingTools;
+      stopWatchingTools = null;
+      safe(stopWatching);
+    }
+  }
+
+  function watchToolChanges() {
+    if (stopWatchingTools !== null || typeof ctx?.on !== 'function') return;
+    try {
+      const dispose = ctx.on('tools/change', () => retryPendingTools());
+      stopWatchingTools = typeof dispose === 'function' ? dispose : NOOP;
+    } catch (error) {
+      warn(`[dsh-jev-layer] could not watch for tool changes: ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * The `tools` service for one module, or `null` when this host has none.
    *
    * `ctx.get('tools')` is tried first. It is not always ready when the registry
    * builds a module api, so a deferred registration through `ctx.inject` is the
    * fallback — the same pattern the installed `dsh-jev-router` uses for
-   * `webServer`. The returned disposer works in both cases: it releases the
-   * registration if one happened and cancels it if one has not happened yet.
+   * `webServer`. The returned disposer works in every case: it releases the
+   * registration if one happened and cancels it if one is still pending.
    */
-  function toolsBridge() {
+  function toolsBridge(moduleId) {
     const direct = ctx?.get?.('tools');
-    if (direct && typeof direct.register === 'function') return direct;
+    if (direct && typeof direct.register === 'function') {
+      // Everything the host's tools service offers stays reachable: `nag.nogoal` probes
+      // `get`. Only `register` is replaced, so a refused name can be retried.
+      return {
+        get: (...args) => direct.get?.(...args),
+        register(definition) {
+          const entry = {
+            moduleId,
+            name: String(definition?.name ?? 'a tool'),
+            error: null,
+            release: null,
+            cancelled: false,
+            attempt() {
+              if (entry.cancelled) return true;
+              if (entry.release !== null) return true;
+              try {
+                const released = direct.register(definition);
+                entry.release = typeof released === 'function' ? released : NOOP;
+                entry.error = null;
+                return true;
+              } catch (error) {
+                entry.error = `${entry.name} is not registered: ${messageOf(error)}`;
+                return false;
+              }
+            },
+          };
+          if (!entry.attempt()) {
+            pendingTools.add(entry);
+            warn(`[dsh-jev-layer] ${entry.error}; it is retried when the tool set changes`);
+            watchToolChanges();
+          }
+          return () => {
+            entry.cancelled = true;
+            pendingTools.delete(entry);
+            const released = entry.release;
+            entry.release = null;
+            if (typeof released === 'function') released();
+          };
+        },
+      };
+    }
     if (typeof ctx?.inject !== 'function') return null;
     return {
       register(definition) {
@@ -421,7 +498,7 @@ export function createRegistry({ modules, ctx, config, core, settleMs }) {
        * not reach for `@deepseek-ai/*` itself. The service is resolved here, from
        * the host context, and the module only ever sees `register`.
        */
-      tools: toolsBridge(),
+      tools: toolsBridge(id),
       /**
        * The skill catalog, for `select.skill`.
        *
@@ -889,6 +966,12 @@ export function createRegistry({ modules, ctx, config, core, settleMs }) {
       listeners.delete(seam);
       safe(dispose);
     }
+    pendingTools.clear();
+    if (typeof stopWatchingTools === 'function') {
+      const stopWatching = stopWatchingTools;
+      stopWatchingTools = null;
+      safe(stopWatching);
+    }
     running = false;
     return state();
   }
@@ -922,15 +1005,20 @@ export function createRegistry({ modules, ctx, config, core, settleMs }) {
   }
 
   function state() {
-    return [...states.values()].map(({ id, seam, seamClass, targets, enabled, started, error }) => ({
-      id,
-      seam,
-      seamClass,
-      targets,
-      enabled,
-      started,
-      error,
-    }));
+    return [...states.values()].map(({ id, seam, seamClass, targets, enabled, started, error }) => {
+      const pending = [...pendingTools].filter((entry) => entry.moduleId === id).map((entry) => entry.error);
+      return {
+        id,
+        seam,
+        seamClass,
+        targets,
+        enabled,
+        started,
+        error,
+        // The module runs, but something it provides is missing; `error` stays for a module that is off.
+        warning: pending.length > 0 ? pending.join('; ') : null,
+      };
+    });
   }
 
   return { start, stop, applyConfig, state, skillsService };

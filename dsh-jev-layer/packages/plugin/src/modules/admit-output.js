@@ -278,6 +278,11 @@ function buildTask(exec, event) {
   return `the ${exec?.name ?? 'tool'} call with arguments ${args}`.slice(0, MAX_TASK_CHARS);
 }
 
+/** The mode this module runs in, as the ledger records it. A hardcoded 'enforce' mislabelled shadow rows. */
+function ledgerMode(api) {
+  return api?.shadow?.isShadow?.('admit.output') === true ? 'shadow' : 'enforce';
+}
+
 /** Append one decision to the ledger. The ledger is a cache; never fail for it. */
 function record(api, exec, probabilities, decision, wouldBe, mode) {
   try {
@@ -399,7 +404,7 @@ export default {
       const saving = originalTokens === 0 ? 0 : (originalTokens - keptTokens) / originalTokens;
       const minSaving = asNumber(readConfig(api, 'minSaving'), 0.15);
       if (saving < minSaving) {
-        record(api, exec, relevance, 'keep-everything', 'keep-everything', 'enforce');
+        record(api, exec, relevance, 'keep-everything', 'keep-everything', ledgerMode(api));
         return unchanged();
       }
 
@@ -413,7 +418,7 @@ export default {
       const rebuilt = withText(content, reassemble(chunks, keep));
       if (rebuilt === undefined) return unchanged();
 
-      record(api, exec, relevance, 'prune', 'prune', 'enforce');
+      record(api, exec, relevance, 'prune', 'prune', ledgerMode(api));
       // Answer in the shape the caller used: the harness waterfall needs a
       // decision back, while the contract's packed form needs the new value.
       if (downstream !== undefined) {
