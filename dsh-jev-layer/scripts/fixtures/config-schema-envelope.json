@@ -1,0 +1,852 @@
+{
+  "uid": 307,
+  "refs": {
+    "3": {
+      "type": "string",
+      "meta": {
+        "default": "dsh-jev-layer",
+        "volatile": true,
+        "description": "Loader entry id, which is also the settings namespace. Must match the id in cordis.patch.yml."
+      }
+    },
+    "7": {
+      "type": "string",
+      "meta": {
+        "default": "https://api.typesafe.ai/v1/systemone",
+        "volatile": true,
+        "description": "Judge endpoint. The default is the TypeSafe System One route; a compatible route (for example https://opencode.ai/zen/v1/systemone) can serve the same key."
+      }
+    },
+    "11": {
+      "type": "string",
+      "meta": {
+        "default": "jev-latest",
+        "volatile": true,
+        "description": "Judge model name. Empty or default means jev-latest, which only the TypeSafe host serves."
+      }
+    },
+    "15": {
+      "type": "string",
+      "meta": {
+        "default": "TYPESAFE_API_KEY",
+        "volatile": true,
+        "description": "Name of the credential that holds the judge API key. The key itself stays in the DSH credential store."
+      }
+    },
+    "19": {
+      "type": "number",
+      "meta": {
+        "default": 20,
+        "volatile": true,
+        "description": "Judge calls allowed per turn, shared by every module. The answering feature outranks pruning when the ceiling is reached."
+      }
+    },
+    "23": {
+      "type": "string",
+      "meta": {
+        "default": "shadow",
+        "volatile": true,
+        "description": "Default mode for every module: shadow records the would-be decision and acts on nothing; enforce acts."
+      }
+    },
+    "27": {
+      "type": "string",
+      "meta": {
+        "default": "",
+        "volatile": true,
+        "description": "Notification transport: an HTTPS POST to this URL. Empty disables the transport."
+      }
+    },
+    "31": {
+      "type": "string",
+      "meta": {
+        "default": "",
+        "volatile": true,
+        "description": "Notification transport: a shell command with the message substituted. Empty disables the transport."
+      }
+    },
+    "35": {
+      "type": "string",
+      "meta": {
+        "default": "",
+        "volatile": true,
+        "description": "Path to a JSONL file where every judgment is appended. Empty keeps the ledger in memory, which is lost when the host exits; set it so shadow-mode records survive for later comparison."
+      }
+    },
+    "39": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Keeps the task-relevant parts of `read`, `grep`, `glob`, `web_fetch` and `web_search` results above a token threshold."
+      }
+    },
+    "43": {
+      "type": "number",
+      "meta": {
+        "default": 2000,
+        "volatile": true,
+        "description": "Only judge tool results estimated above this many tokens."
+      }
+    },
+    "47": {
+      "type": "number",
+      "meta": {
+        "default": 0.15,
+        "volatile": true,
+        "description": "Keep everything when the achievable saving is below this ratio."
+      }
+    },
+    "48": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 39,
+        "minTokens": 43,
+        "minSaving": 47
+      }
+    },
+    "52": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Flags instructions aimed at the model inside fetched page text."
+      }
+    },
+    "56": {
+      "type": "number",
+      "meta": {
+        "default": 0.75,
+        "volatile": true,
+        "description": "Probability at or above which fetched text is reported as possibly addressing the model."
+      }
+    },
+    "60": {
+      "type": "number",
+      "meta": {
+        "default": 300,
+        "volatile": true,
+        "description": "Skip screening for fetched text shorter than this; too short to carry an instruction."
+      }
+    },
+    "61": {
+      "type": "string",
+      "meta": {}
+    },
+    "65": {
+      "type": "array",
+      "meta": {
+        "default": [
+          "web_fetch",
+          "web_search"
+        ],
+        "volatile": true,
+        "description": "Tools whose results are screened. Defaults to the external fetches only."
+      },
+      "inner": 61
+    },
+    "66": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 52,
+        "threshold": 56,
+        "minTokens": 60,
+        "toolAllowlist": 65
+      }
+    },
+    "70": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Picks at most one skill per turn from a catalog of fifteen or more."
+      }
+    },
+    "74": {
+      "type": "number",
+      "meta": {
+        "default": 15,
+        "volatile": true,
+        "description": "Suggest a skill only when the model-facing catalog holds at least this many."
+      }
+    },
+    "78": {
+      "type": "number",
+      "meta": {
+        "default": 0.3,
+        "volatile": true,
+        "description": "Silence beats a weak guess: below this probability nothing is suggested."
+      }
+    },
+    "82": {
+      "type": "number",
+      "meta": {
+        "default": 12,
+        "volatile": true,
+        "description": "A latest message shorter than this is judged together with the messages before it."
+      }
+    },
+    "83": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 70,
+        "minCatalogSize": 74,
+        "minConfidence": 78,
+        "minTaskChars": 82
+      }
+    },
+    "87": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Checks the final answer's claims against recorded evidence, model-invoked and automatic."
+      }
+    },
+    "91": {
+      "type": "number",
+      "meta": {
+        "default": 0.8,
+        "volatile": true,
+        "description": "Confidence at or above which a verified claim stands on its own; below it the claim is only reviewed."
+      }
+    },
+    "95": {
+      "type": "number",
+      "meta": {
+        "default": 16,
+        "volatile": true,
+        "description": "At most this many claims per jev_gate call. A gate that silently drops claims is worse than one that refuses."
+      }
+    },
+    "99": {
+      "type": "boolean",
+      "meta": {
+        "default": true,
+        "volatile": true,
+        "description": "Check the visible final answer against recorded evidence automatically, and request at most one supplemental attempt."
+      }
+    },
+    "100": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 87,
+        "autoAccept": 91,
+        "maxClaims": 95,
+        "autoCheck": 99
+      }
+    },
+    "104": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "The `jev_ask` tool: typed `noul`, `choice` and `score` questions in, probabilities out."
+      }
+    },
+    "105": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 104
+      }
+    },
+    "109": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "The same pruning for `bash` and `pwsh` output: keeps failures, summaries, named and slow tests, drops ordinary passing detail."
+      }
+    },
+    "113": {
+      "type": "number",
+      "meta": {
+        "default": 2000,
+        "volatile": true,
+        "description": "Only judge a bash or pwsh result estimated above this many tokens."
+      }
+    },
+    "117": {
+      "type": "number",
+      "meta": {
+        "default": 300,
+        "volatile": true,
+        "description": "A test at or above this duration is always kept, whatever the task names."
+      }
+    },
+    "121": {
+      "type": "number",
+      "meta": {
+        "default": 0.15,
+        "volatile": true,
+        "description": "Keep everything when the achievable saving is below this ratio."
+      }
+    },
+    "122": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 109,
+        "minTokens": 113,
+        "slowTestMs": 117,
+        "minSaving": 121
+      }
+    },
+    "126": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "One notice after a run of rounds without progress."
+      }
+    },
+    "130": {
+      "type": "number",
+      "meta": {
+        "default": 4,
+        "volatile": true,
+        "description": "Rounds without progress, judged at round boundaries, before one advisory notice is raised."
+      }
+    },
+    "131": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 126,
+        "stalledRounds": 130
+      }
+    },
+    "135": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "One notice per repeated unproductive pattern."
+      }
+    },
+    "139": {
+      "type": "number",
+      "meta": {
+        "default": 3,
+        "volatile": true,
+        "description": "Consecutive identical tool calls that count as drift. Below 2 nothing can repeat."
+      }
+    },
+    "143": {
+      "type": "number",
+      "meta": {
+        "default": 3,
+        "volatile": true,
+        "description": "Consecutive failures of one tool that count as a failure loop."
+      }
+    },
+    "147": {
+      "type": "number",
+      "meta": {
+        "default": 200,
+        "volatile": true,
+        "description": "How many trailing session messages are examined for tool calls and failures."
+      }
+    },
+    "148": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 135,
+        "repeatThreshold": 139,
+        "failureThreshold": 143,
+        "lookbackMessages": 147
+      }
+    },
+    "152": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "One notice when the applicable rules are missing."
+      }
+    },
+    "153": {
+      "type": "string",
+      "meta": {}
+    },
+    "157": {
+      "type": "array",
+      "meta": {
+        "default": [
+          "agent-instructions"
+        ],
+        "volatile": true,
+        "description": "Message source kinds that count as applicable instructions or rules."
+      },
+      "inner": 153
+    },
+    "158": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 152,
+        "instructionKinds": 157
+      }
+    },
+    "162": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Answers the agent's own questions when nobody is coming, or delegates."
+      }
+    },
+    "166": {
+      "type": "number",
+      "meta": {
+        "default": 0.9,
+        "volatile": true,
+        "description": "Answer only when the top option reaches this probability."
+      }
+    },
+    "170": {
+      "type": "number",
+      "meta": {
+        "default": 0.35,
+        "volatile": true,
+        "description": "Answer only when the top option beats the runner-up by at least this."
+      }
+    },
+    "174": {
+      "type": "number",
+      "meta": {
+        "default": 2500,
+        "volatile": true,
+        "description": "Wall-clock budget for the judgment. Past it the question is delegated."
+      }
+    },
+    "175": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 162,
+        "minProbability": 166,
+        "minMargin": 170,
+        "deadlineMs": 174
+      }
+    },
+    "179": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Tells whoever can act that the session has no goal."
+      }
+    },
+    "183": {
+      "type": "string",
+      "meta": {
+        "default": "auto",
+        "volatile": true,
+        "description": "Who receives the no-goal nag: auto (the agent when the goal tool is registered, otherwise the operator), agent, user, or off."
+      }
+    },
+    "187": {
+      "type": "boolean",
+      "meta": {
+        "default": true,
+        "volatile": true,
+        "description": "Deliver at most one no-goal nag per session. A later question in the same session is recorded as suppressed."
+      }
+    },
+    "188": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 179,
+        "nagTarget": 183,
+        "nagOncePerSession": 187
+      }
+    },
+    "192": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Tells the user when a question was declined, so an unattended loop does not wait forever."
+      }
+    },
+    "196": {
+      "type": "string",
+      "meta": {
+        "default": "off",
+        "volatile": true,
+        "description": "Notification transport: \"off\", \"url\" (POST JSON through the core), \"command\", or \"auto\" (whichever is configured)."
+      }
+    },
+    "200": {
+      "type": "string",
+      "meta": {
+        "default": "",
+        "volatile": true,
+        "description": "Shell command for the command transport; {title}, {body}, {session} and {reason} are substituted."
+      }
+    },
+    "204": {
+      "type": "string",
+      "meta": {
+        "default": "dsh-jev-layer: question not answered",
+        "volatile": true,
+        "description": "Notification title; the same placeholders are substituted."
+      }
+    },
+    "208": {
+      "type": "string",
+      "meta": {
+        "default": "A question in an armed goal was delegated to a human who is not there.\nQuestion: {question}\nOptions: {options}\nReason: {reason}\nSession: {session}",
+        "volatile": true,
+        "description": "Notification body; the same placeholders are substituted."
+      }
+    },
+    "212": {
+      "type": "number",
+      "meta": {
+        "default": 60000,
+        "volatile": true,
+        "description": "Minimum interval between messages sent through the command transport."
+      }
+    },
+    "216": {
+      "type": "number",
+      "meta": {
+        "default": 6,
+        "volatile": true,
+        "description": "Hard ceiling per rolling hour for the command transport."
+      }
+    },
+    "217": {
+      "type": "string",
+      "meta": {}
+    },
+    "221": {
+      "type": "array",
+      "meta": {
+        "default": [
+          "no-agent",
+          "no-goal",
+          "goal-absent",
+          "disarmed",
+          "not-armed",
+          "inactive",
+          "not-active",
+          "autonomy",
+          "autonomy-gate"
+        ],
+        "volatile": true,
+        "description": "Delegate reasons that mean the autonomy gate did not hold, so no message is sent."
+      },
+      "inner": 217
+    },
+    "222": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 192,
+        "transport": 196,
+        "commandTemplate": 200,
+        "titleTemplate": 204,
+        "bodyTemplate": 208,
+        "minIntervalMs": 212,
+        "maxPerHour": 216,
+        "autonomyReasons": 221
+      }
+    },
+    "226": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Reduces the visible tool set - off by default, at most one change per session."
+      }
+    },
+    "227": {
+      "type": "string",
+      "meta": {}
+    },
+    "231": {
+      "type": "array",
+      "meta": {
+        "default": [],
+        "volatile": true,
+        "description": "Tool names to keep, one per line: everything else is removed from the tools this agent is offered. tools.surface ships off by default, and the first change invalidates the prompt cache once."
+      },
+      "inner": 227
+    },
+    "232": {
+      "type": "string",
+      "meta": {}
+    },
+    "236": {
+      "type": "array",
+      "meta": {
+        "default": [],
+        "volatile": true,
+        "description": "Tool names to remove from the tools this agent is offered. `allow` and `deny` may be used together and intersect. tools.surface ships off by default and changes the presented tool set at most once per session."
+      },
+      "inner": 232
+    },
+    "240": {
+      "type": "number",
+      "meta": {
+        "default": 1,
+        "volatile": true,
+        "description": "How many times tools.surface may change one session's tool set. The default is 1: a later request in the same session is refused and recorded, because every change rewrites the tool schemas in the prompt prefix and so invalidates the prompt cache. tools.surface ships off by default."
+      }
+    },
+    "241": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 226,
+        "allow": 231,
+        "deny": 236,
+        "maxChanges": 240
+      }
+    },
+    "245": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Ranks path candidates to steer the next read."
+      }
+    },
+    "249": {
+      "type": "number",
+      "meta": {
+        "default": 0.7,
+        "volatile": true,
+        "description": "Top candidate score at or above which the next file to read is reported."
+      }
+    },
+    "253": {
+      "type": "number",
+      "meta": {
+        "default": 3,
+        "volatile": true,
+        "description": "Fewer candidate paths than this are not ranked; a lone candidate is never reported."
+      }
+    },
+    "257": {
+      "type": "number",
+      "meta": {
+        "default": 20,
+        "volatile": true,
+        "description": "Most candidate paths judged per result, bounding the paid calls on a broad glob."
+      }
+    },
+    "258": {
+      "type": "string",
+      "meta": {}
+    },
+    "262": {
+      "type": "array",
+      "meta": {
+        "default": [
+          "glob"
+        ],
+        "volatile": true,
+        "description": "Path-candidate tools whose results are ranked. Defaults to glob only."
+      },
+      "inner": 258
+    },
+    "263": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 245,
+        "threshold": 249,
+        "minCandidates": 253,
+        "maxCandidates": 257,
+        "toolAllowlist": 262
+      }
+    },
+    "267": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Queues a running correction for the next step."
+      }
+    },
+    "271": {
+      "type": "number",
+      "meta": {
+        "default": 0.5,
+        "volatile": true,
+        "description": "Probability at or above which a queued user message is treated as a correction and routed to the next step."
+      }
+    },
+    "275": {
+      "type": "number",
+      "meta": {
+        "default": 4000,
+        "volatile": true,
+        "description": "Bound on the judge request for one candidate; the step being decided waits for this answer."
+      }
+    },
+    "276": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 267,
+        "threshold": 271,
+        "timeoutMs": 275
+      }
+    },
+    "280": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Returns `ask` for an eligible escalation instead of letting it through."
+      }
+    },
+    "284": {
+      "type": "number",
+      "meta": {
+        "default": 0.9,
+        "volatile": true,
+        "description": "Record an approve below this probability as low confidence. Every verdict still asks the human."
+      }
+    },
+    "288": {
+      "type": "number",
+      "meta": {
+        "default": 2500,
+        "volatile": true,
+        "description": "Wall-clock budget for the judgment. Past it the call is passed through to the harness."
+      }
+    },
+    "289": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 280,
+        "minProbability": 284,
+        "deadlineMs": 288
+      }
+    },
+    "293": {
+      "type": "boolean",
+      "meta": {
+        "default": false,
+        "volatile": true,
+        "description": "Delivers a correction to exactly the agents this session already sent a finding to, by reading its own `send_message` history."
+      }
+    },
+    "297": {
+      "type": "number",
+      "meta": {
+        "default": 0.8,
+        "volatile": true,
+        "description": "Only correct a recipient when the judge is at least this sure that the new statement contradicts the old one."
+      }
+    },
+    "301": {
+      "type": "number",
+      "meta": {
+        "default": 40,
+        "volatile": true,
+        "description": "How many trailing messages to scan for send_message calls."
+      }
+    },
+    "305": {
+      "type": "number",
+      "meta": {
+        "default": 3,
+        "volatile": true,
+        "description": "Hard ceiling on corrections delivered in one session, so a chatty session cannot become a broadcast."
+      }
+    },
+    "306": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "enabled": 293,
+        "minProbability": 297,
+        "lookbackMessages": 301,
+        "maxPerSession": 305
+      }
+    },
+    "307": {
+      "type": "object",
+      "meta": {
+        "default": {}
+      },
+      "dict": {
+        "namespace": 3,
+        "endpoint": 7,
+        "model": 11,
+        "apiKeyRef": 15,
+        "turnCeiling": 19,
+        "mode": 23,
+        "notifyUrl": 27,
+        "notifyCommand": 31,
+        "ledgerPath": 35,
+        "admit.output": 48,
+        "screen.fetch": 66,
+        "select.skill": 83,
+        "gate.completion": 100,
+        "tools.ask": 105,
+        "admit.terminal": 122,
+        "supervise.goal": 131,
+        "remind.drift": 148,
+        "guide.instructions": 158,
+        "answer.questions": 175,
+        "nag.nogoal": 188,
+        "notify.decline": 222,
+        "tools.surface": 241,
+        "rank.files": 263,
+        "route.interjection": 276,
+        "approve.workspace": 289,
+        "guide.shared": 306
+      }
+    }
+  }
+}

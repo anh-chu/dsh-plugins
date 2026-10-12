@@ -1,0 +1,13 @@
+{
+  "name": "dsh-jev-layer-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.4.0",
+  "description": "One Jev decision layer for DeepSeek Harness: a framework-agnostic core plus one modular plugin.",
+  "license": "MIT",
+  "scripts": {
+    "check": "node --check packages/core/src/index.js && node --check packages/plugin/src/index.js",
+    "test": "node --test 'packages/**/test/*.test.js'",
+    "gates": "node scripts/gates.mjs"
+  }
+}

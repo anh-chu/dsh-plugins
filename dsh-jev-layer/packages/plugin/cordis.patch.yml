@@ -1,0 +1,5 @@
+# dsh-jev-layer — one row. Every module inside it is off by default.
+# The id is also the settings namespace: config.namespace must match it.
+- insert:
+    - id: dsh-jev-layer
+      name: 'dsh-jev-layer'

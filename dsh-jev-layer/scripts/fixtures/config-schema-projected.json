@@ -1,0 +1,1693 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "loaderExpression": {
+      "type": "object",
+      "properties": {
+        "__jsExpr": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "__jsExpr"
+      ],
+      "description": "Inert representation of a YAML !!js scalar from the Cordis entry-list parser. Its result is evaluated and validated only at runtime. Extra marker-object fields are ignored by interpolation."
+    }
+  },
+  "default": {},
+  "anyOf": [
+    {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "namespace": {
+          "description": "Loader entry id, which is also the settings namespace. Must match the id in cordis.patch.yml.",
+          "default": "dsh-jev-layer",
+          "x-cordis": {
+            "volatile": true
+          },
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "endpoint": {
+          "description": "Judge endpoint. The default is the TypeSafe System One route; a compatible route (for example https://opencode.ai/zen/v1/systemone) can serve the same key.",
+          "default": "https://api.typesafe.ai/v1/systemone",
+          "x-cordis": {
+            "volatile": true
+          },
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "model": {
+          "description": "Judge model name. Empty or default means jev-latest, which only the TypeSafe host serves.",
+          "default": "jev-latest",
+          "x-cordis": {
+            "volatile": true
+          },
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "apiKeyRef": {
+          "description": "Name of the credential that holds the judge API key. The key itself stays in the DSH credential store.",
+          "default": "TYPESAFE_API_KEY",
+          "x-cordis": {
+            "volatile": true
+          },
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "turnCeiling": {
+          "description": "Judge calls allowed per turn, shared by every module. The answering feature outranks pruning when the ceiling is reached.",
+          "default": 20,
+          "x-cordis": {
+            "volatile": true
+          },
+          "anyOf": [
+            {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "mode": {
+          "description": "Default mode for every module: shadow records the would-be decision and acts on nothing; enforce acts.",
+          "default": "shadow",
+          "x-cordis": {
+            "volatile": true
+          },
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "notifyUrl": {
+          "description": "Notification transport: an HTTPS POST to this URL. Empty disables the transport.",
+          "default": "",
+          "x-cordis": {
+            "volatile": true
+          },
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "notifyCommand": {
+          "description": "Notification transport: a shell command with the message substituted. Empty disables the transport.",
+          "default": "",
+          "x-cordis": {
+            "volatile": true
+          },
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "ledgerPath": {
+          "description": "Path to a JSONL file where every judgment is appended. Empty keeps the ledger in memory, which is lost when the host exits; set it so shadow-mode records survive for later comparison.",
+          "default": "",
+          "x-cordis": {
+            "volatile": true
+          },
+          "anyOf": [
+            {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "admit.output": {
+          "description": "Keeps the task-relevant parts of `read`, `grep`, `glob`, `web_fetch` and `web_search` results above a token threshold.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable admit.output. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minTokens": {
+                  "description": "Only judge tool results estimated above this many tokens.",
+                  "default": 2000,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minSaving": {
+                  "description": "Keep everything when the achievable saving is below this ratio.",
+                  "default": 0.15,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "screen.fetch": {
+          "description": "Flags instructions aimed at the model inside fetched page text.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable screen.fetch. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "threshold": {
+                  "description": "Probability at or above which fetched text is reported as possibly addressing the model.",
+                  "default": 0.75,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minTokens": {
+                  "description": "Skip screening for fetched text shorter than this; too short to carry an instruction.",
+                  "default": 300,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "toolAllowlist": {
+                  "description": "Tools whose results are screened. Defaults to the external fetches only.",
+                  "default": [
+                    "web_fetch",
+                    "web_search"
+                  ],
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          {
+                            "$ref": "#/$defs/loaderExpression"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "select.skill": {
+          "description": "Picks at most one skill per turn from a catalog of fifteen or more.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable select.skill. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minCatalogSize": {
+                  "description": "Suggest a skill only when the model-facing catalog holds at least this many.",
+                  "default": 15,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minConfidence": {
+                  "description": "Silence beats a weak guess: below this probability nothing is suggested.",
+                  "default": 0.3,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minTaskChars": {
+                  "description": "A latest message shorter than this is judged together with the messages before it.",
+                  "default": 12,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "gate.completion": {
+          "description": "Checks the final answer's claims against recorded evidence, model-invoked and automatic.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable gate.completion. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "autoAccept": {
+                  "description": "Confidence at or above which a verified claim stands on its own; below it the claim is only reviewed.",
+                  "default": 0.8,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "maxClaims": {
+                  "description": "At most this many claims per jev_gate call. A gate that silently drops claims is worse than one that refuses.",
+                  "default": 16,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "autoCheck": {
+                  "description": "Check the visible final answer against recorded evidence automatically, and request at most one supplemental attempt.",
+                  "default": true,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "tools.ask": {
+          "description": "The `jev_ask` tool: typed `noul`, `choice` and `score` questions in, probabilities out.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable tools.ask. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "admit.terminal": {
+          "description": "The same pruning for `bash` and `pwsh` output: keeps failures, summaries, named and slow tests, drops ordinary passing detail.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable admit.terminal. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minTokens": {
+                  "description": "Only judge a bash or pwsh result estimated above this many tokens.",
+                  "default": 2000,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "slowTestMs": {
+                  "description": "A test at or above this duration is always kept, whatever the task names.",
+                  "default": 300,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minSaving": {
+                  "description": "Keep everything when the achievable saving is below this ratio.",
+                  "default": 0.15,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "supervise.goal": {
+          "description": "One notice after a run of rounds without progress.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable supervise.goal. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "stalledRounds": {
+                  "description": "Rounds without progress, judged at round boundaries, before one advisory notice is raised.",
+                  "default": 4,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "remind.drift": {
+          "description": "One notice per repeated unproductive pattern.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable remind.drift. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "repeatThreshold": {
+                  "description": "Consecutive identical tool calls that count as drift. Below 2 nothing can repeat.",
+                  "default": 3,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "failureThreshold": {
+                  "description": "Consecutive failures of one tool that count as a failure loop.",
+                  "default": 3,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "lookbackMessages": {
+                  "description": "How many trailing session messages are examined for tool calls and failures.",
+                  "default": 200,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "guide.instructions": {
+          "description": "One notice when the applicable rules are missing.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable guide.instructions. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "instructionKinds": {
+                  "description": "Message source kinds that count as applicable instructions or rules.",
+                  "default": [
+                    "agent-instructions"
+                  ],
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          {
+                            "$ref": "#/$defs/loaderExpression"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "answer.questions": {
+          "description": "Answers the agent's own questions when nobody is coming, or delegates.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable answer.questions. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minProbability": {
+                  "description": "Answer only when the top option reaches this probability.",
+                  "default": 0.9,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minMargin": {
+                  "description": "Answer only when the top option beats the runner-up by at least this.",
+                  "default": 0.35,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "deadlineMs": {
+                  "description": "Wall-clock budget for the judgment. Past it the question is delegated.",
+                  "default": 2500,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "nag.nogoal": {
+          "description": "Tells whoever can act that the session has no goal.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable nag.nogoal. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "nagTarget": {
+                  "description": "Who receives the no-goal nag: auto (the agent when the goal tool is registered, otherwise the operator), agent, user, or off.",
+                  "default": "auto",
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "nagOncePerSession": {
+                  "description": "Deliver at most one no-goal nag per session. A later question in the same session is recorded as suppressed.",
+                  "default": true,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "notify.decline": {
+          "description": "Tells the user when a question was declined, so an unattended loop does not wait forever.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable notify.decline. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "transport": {
+                  "description": "Notification transport: \"off\", \"url\" (POST JSON through the core), \"command\", or \"auto\" (whichever is configured).",
+                  "default": "off",
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "commandTemplate": {
+                  "description": "Shell command for the command transport; {title}, {body}, {session} and {reason} are substituted.",
+                  "default": "",
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "titleTemplate": {
+                  "description": "Notification title; the same placeholders are substituted.",
+                  "default": "dsh-jev-layer: question not answered",
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "bodyTemplate": {
+                  "description": "Notification body; the same placeholders are substituted.",
+                  "default": "A question in an armed goal was delegated to a human who is not there.\nQuestion: {question}\nOptions: {options}\nReason: {reason}\nSession: {session}",
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minIntervalMs": {
+                  "description": "Minimum interval between messages sent through the command transport.",
+                  "default": 60000,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "maxPerHour": {
+                  "description": "Hard ceiling per rolling hour for the command transport.",
+                  "default": 6,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "autonomyReasons": {
+                  "description": "Delegate reasons that mean the autonomy gate did not hold, so no message is sent.",
+                  "default": [
+                    "no-agent",
+                    "no-goal",
+                    "goal-absent",
+                    "disarmed",
+                    "not-armed",
+                    "inactive",
+                    "not-active",
+                    "autonomy",
+                    "autonomy-gate"
+                  ],
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          {
+                            "$ref": "#/$defs/loaderExpression"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "tools.surface": {
+          "description": "Reduces the visible tool set - off by default, at most one change per session.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable tools.surface. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "allow": {
+                  "description": "Tool names to keep, one per line: everything else is removed from the tools this agent is offered. tools.surface ships off by default, and the first change invalidates the prompt cache once.",
+                  "default": [],
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          {
+                            "$ref": "#/$defs/loaderExpression"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "deny": {
+                  "description": "Tool names to remove from the tools this agent is offered. `allow` and `deny` may be used together and intersect. tools.surface ships off by default and changes the presented tool set at most once per session.",
+                  "default": [],
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          {
+                            "$ref": "#/$defs/loaderExpression"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "maxChanges": {
+                  "description": "How many times tools.surface may change one session's tool set. The default is 1: a later request in the same session is refused and recorded, because every change rewrites the tool schemas in the prompt prefix and so invalidates the prompt cache. tools.surface ships off by default.",
+                  "default": 1,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "rank.files": {
+          "description": "Ranks path candidates to steer the next read.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable rank.files. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "threshold": {
+                  "description": "Top candidate score at or above which the next file to read is reported.",
+                  "default": 0.7,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minCandidates": {
+                  "description": "Fewer candidate paths than this are not ranked; a lone candidate is never reported.",
+                  "default": 3,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "maxCandidates": {
+                  "description": "Most candidate paths judged per result, bounding the paid calls on a broad glob.",
+                  "default": 20,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "toolAllowlist": {
+                  "description": "Path-candidate tools whose results are ranked. Defaults to glob only.",
+                  "default": [
+                    "glob"
+                  ],
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          {
+                            "$ref": "#/$defs/loaderExpression"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "route.interjection": {
+          "description": "Queues a running correction for the next step.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable route.interjection. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "threshold": {
+                  "description": "Probability at or above which a queued user message is treated as a correction and routed to the next step.",
+                  "default": 0.5,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "timeoutMs": {
+                  "description": "Bound on the judge request for one candidate; the step being decided waits for this answer.",
+                  "default": 4000,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "approve.workspace": {
+          "description": "Returns `ask` for an eligible escalation instead of letting it through.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable approve.workspace. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minProbability": {
+                  "description": "Record an approve below this probability as low confidence. Every verdict still asks the human.",
+                  "default": 0.9,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "deadlineMs": {
+                  "description": "Wall-clock budget for the judgment. Past it the call is passed through to the harness.",
+                  "default": 2500,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        },
+        "guide.shared": {
+          "description": "Delivers a correction to exactly the agents this session already sent a finding to, by reading its own `send_message` history.",
+          "default": {},
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable guide.shared. Off on a fresh install.",
+                  "default": false,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "minProbability": {
+                  "description": "Only correct a recipient when the judge is at least this sure that the new statement contradicts the old one.",
+                  "default": 0.8,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "lookbackMessages": {
+                  "description": "How many trailing messages to scan for send_message calls.",
+                  "default": 40,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                },
+                "maxPerSession": {
+                  "description": "Hard ceiling on corrections delivered in one session, so a chatty session cannot become a broadcast.",
+                  "default": 3,
+                  "x-cordis": {
+                    "volatile": true
+                  },
+                  "anyOf": [
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/loaderExpression"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/loaderExpression"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "$ref": "#/$defs/loaderExpression"
+    }
+  ]
+}

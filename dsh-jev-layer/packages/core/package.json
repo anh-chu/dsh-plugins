@@ -1,0 +1,10 @@
+{
+  "name": "dsh-jev-layer-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The judge and shared machinery. Imports nothing from DeepSeek Harness or Cordis, so it is testable with no host and no network.",
+  "license": "MIT",
+  "main": "./src/index.js",
+  "exports": { ".": "./src/index.js" }
+}
