@@ -70,6 +70,9 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 25));
 
 test('apply() returns before any module starts, then boots the registry', async () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-jev-layer-entry-'));
+  // The default ledger lives in the DSH home; a test must not write into the real one.
+  const realDshHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = join(root, 'dsh-home');
   try {
     const pluginSrc = join(root, 'packages/plugin/src');
     cpSync(SOURCE, pluginSrc, { recursive: true });
@@ -151,6 +154,8 @@ test('apply() returns before any module starts, then boots the registry', async 
     await settle();
     assert.equal(entry.registryState().find((state) => state.id === 'tools.ask').started, true);
   } finally {
+    if (realDshHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = realDshHome;
     rmSync(root, { recursive: true, force: true });
   }
 });

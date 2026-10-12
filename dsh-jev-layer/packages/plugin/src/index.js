@@ -17,7 +17,7 @@
  */
 
 import MODULES from './modules/index.js';
-import { GLOBAL_DEFAULTS, buildConfig, createSettings, readConfig, schemastery } from './config.js';
+import { GLOBAL_DEFAULTS, buildConfig, createSettings, readConfig, resolveLedgerPath, schemastery } from './config.js';
 import { createRegistry } from './registry.js';
 
 export const name = 'dsh-jev-layer';
@@ -87,13 +87,12 @@ async function boot(ctx, live) {
     const settings = createSettings(live, () => credential.read());
     // A ledger that only lives in memory cannot keep shadow mode's promise: the
     // records are gone the moment the host exits, so there is nothing to compare
-    // your own answers against later. `ledgerPath` is empty by default, which
-    // keeps the ledger in memory, and points at a JSONL file when set.
-    const ledgerPath = settings.get('ledgerPath');
+    // your own answers against later. So an empty `ledgerPath` means the built-in
+    // file in the DSH home, and only `off` keeps the ledger in memory.
     core = createCore({
       settings,
       log: ctx?.logger,
-      statePath: typeof ledgerPath === 'string' && ledgerPath !== '' ? ledgerPath : undefined,
+      statePath: resolveLedgerPath(settings.get('ledgerPath')),
     });
   } catch (error) {
     warn(`the core could not be built, every module stays off: ${messageOf(error)}`);

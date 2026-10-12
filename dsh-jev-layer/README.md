@@ -55,12 +55,15 @@ never holds a key of its own and never writes one to a file.
 
 ## Read what it did
 
-Set `ledgerPath` to a JSONL file and every judgment is appended there: the
-question, the probabilities, the threshold, the decision, and — in shadow mode —
-what would have happened instead. Leave it empty and the ledger lives in memory,
-which is fine while a host is running (the status route shows it) but gone when
-the process exits. Set it before you rely on shadow mode, because the point of
-shadow is to compare recorded decisions against your own answers later.
+Every judgment is appended, one JSON line each, to `ledger.jsonl` inside
+`dsh-jev-layer` in your DSH home (`~/.dsh/dsh-jev-layer/ledger.jsonl` by default).
+A line holds the module, the decision, the probabilities, the threshold and — in
+shadow mode — what would have happened instead. Nothing needs to be set. The file
+moves to `ledger.jsonl.1` once it passes 5 MiB, so it cannot grow without limit.
+
+`ledgerPath` is only for changing that: enter a path to use another file, or `off`
+to keep the ledger in memory only (the status route then shows a count and nothing
+survives a restart). The path is read once at start, so a change needs a restart.
 
 ## Verify
 

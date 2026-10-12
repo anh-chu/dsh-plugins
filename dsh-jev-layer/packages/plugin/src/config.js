@@ -24,7 +24,8 @@
  * read by eye and awkward to patch from a settings form. The id is a literal
  * top-level key instead, and the registry never parses a config path.
  */
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /**
@@ -46,9 +47,11 @@ export const GLOBAL_DEFAULTS = Object.freeze({
   notifyUrl: '',
   notifyCommand: '',
   /**
-   * Where judgments are appended as JSONL. Empty keeps the ledger in memory,
-   * which means every record is gone when the host exits — and that makes shadow
-   * mode's promise unreadable after the fact.
+   * Where judgments are appended as JSONL. Empty means the built-in file,
+   * `<DSH_HOME>/dsh-jev-layer/ledger.jsonl`; a path names another file; `off`
+   * keeps the ledger in memory only. An in-memory ledger is gone when the host
+   * exits, which makes shadow mode's promise unreadable after the fact, so the
+   * file is the default and nobody has to set anything.
    */
   ledgerPath: '',
 });
@@ -63,7 +66,7 @@ const GLOBAL_DESCRIPTIONS = Object.freeze({
   mode: 'Default mode for every module: shadow records the would-be decision and acts on nothing; enforce acts.',
   notifyUrl: 'Notification transport: an HTTPS POST to this URL. Empty disables the transport.',
   notifyCommand: 'Notification transport: a shell command with the message substituted. Empty disables the transport.',
-  ledgerPath: 'Path to a JSONL file where every judgment is appended. Empty keeps the ledger in memory, which is lost when the host exits; set it so shadow-mode records survive for later comparison.',
+  ledgerPath: 'Where every judgment is recorded, one JSON line each. Empty uses the built-in file, dsh-jev-layer/ledger.jsonl inside the DSH home. Enter a path to use another file, or off to keep nothing on disk. Read once at start, so a change needs a restart.',
 });
 
 /** The declarative setting types a module may use in its `settings` map. */
@@ -325,4 +328,37 @@ export function createModuleConfig(getLive, id) {
       return readConfig(getLive()?.[id], key);
     },
   };
+}
+
+
+/** The ledger file is moved aside once it passes this size, so the default cannot grow without limit. */
+export const LEDGER_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Where the ledger is written.
+ *
+ * Empty means the built-in file in the DSH home, so no one has to configure anything to
+ * be able to read what the modules decided. `off` keeps the ledger in memory only. Any
+ * other value is a path the operator chose. The directory is created, and a file past
+ * {@link LEDGER_MAX_BYTES} is moved to `ledger.jsonl.1` (replacing the previous one), so
+ * the history is bounded at about twice that size. A failure to prepare the path returns
+ * `undefined`, which keeps the ledger in memory: bookkeeping must never stop the plugin.
+ *
+ * @param {unknown} value the `ledgerPath` setting.
+ * @param {{ home?: string }} [options] the DSH home, for tests.
+ * @returns {string | undefined} the file to append to, or `undefined` for memory only.
+ */
+export function resolveLedgerPath(value, options = {}) {
+  const configured = typeof value === 'string' ? value.trim() : '';
+  if (configured.toLowerCase() === 'off') return undefined;
+  try {
+    const home = options.home ?? process.env.DSH_HOME ?? join(homedir(), '.dsh');
+    const path = configured === '' ? join(home, 'dsh-jev-layer', 'ledger.jsonl') : configured;
+    const dir = path.slice(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')));
+    if (dir !== '') mkdirSync(dir, { recursive: true });
+    if (existsSync(path) && statSync(path).size > LEDGER_MAX_BYTES) renameSync(path, `${path}.1`);
+    return path;
+  } catch {
+    return undefined;
+  }
 }
